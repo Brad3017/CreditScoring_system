@@ -123,3 +123,17 @@ export default function Home() {
           </button>
         </div>
       </aside>
+      {/* 2. Main Content Area */}
+      <main className="main-content">
+        {/* Top Header bar with Owner details */}
+        <header className="topbar">
+          <h3>MSME Portal</h3>
+          <div className="user-profile-badge">
+            <span className="user-avatar">👤</span>
+            <div className="user-meta">
+              <strong>Bradley Lusalenge</strong>
+              <small>MSME Owner</small>
+            </div>
+          </div>
+        </header>
+
