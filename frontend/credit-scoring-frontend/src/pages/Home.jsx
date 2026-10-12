@@ -87,3 +87,39 @@ export default function Home() {
     clearSession();
     navigate("/login");
   }
+  return (
+    <div className="dashboard-container">
+      {/* 1. Sidebar matching wireframe */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <h2>CreditIQ SME</h2>
+          <span>Credit Assessment System</span>
+        </div>
+
+        <nav className="sidebar-nav">
+          <button
+            className={`nav-item ${activeTab === "dashboard" ? "active" : ""}`}
+            onClick={() => setActiveTab("dashboard")}
+          >
+            📊 Dashboard
+          </button>
+          <button
+            className={`nav-item ${activeTab === "new_assessment" ? "active" : ""}`}
+            onClick={() => setActiveTab("new_assessment")}
+          >
+            📝 New Assessment
+          </button>
+          <button
+            className={`nav-item ${activeTab === "history" ? "active" : ""}`}
+            onClick={() => setActiveTab("history")}
+          >
+            📁 My Applications
+          </button>
+        </nav>
+
+        <div className="sidebar-footer">
+          <button className="logout-btn" onClick={handleLogout}>
+            🚪 Logout
+          </button>
+        </div>
+      </aside>
