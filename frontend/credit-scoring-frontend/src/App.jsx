@@ -5,17 +5,24 @@ import Home from "./pages/Home";
 import { getToken } from "./lib/api";
 
 function Private({ children }) {
-  return getToken() ? children : <Navigate to="/login" />;
+  return getToken() ? children : <Navigate to="/login" replace />;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/signup" />} />
+        <Route path="/" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/home" element={<Private><Home /></Private>} />
+        <Route
+          path="/home"
+          element={
+            <Private>
+              <Home />
+            </Private>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

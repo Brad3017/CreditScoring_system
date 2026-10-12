@@ -22,10 +22,37 @@ export async function login(data) {
   return body;
 }
 
+export async function fetchMyAssessments() {
+  const token = getToken();
+  const res = await fetch(`${BASE}/assessments/`, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function submitAssessment(payload) {
+  const token = getToken();
+  const res = await fetch(`${BASE}/assessments/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.detail || "Assessment submission failed");
+  return body;
+}
+
 export function saveSession(access, refresh, role) {
-  localStorage.setItem("access", access);
-  localStorage.setItem("refresh", refresh);
-  localStorage.setItem("role", role);
+  if (access) localStorage.setItem("access", access);
+  if (refresh) localStorage.setItem("refresh", refresh);
+  if (role) localStorage.setItem("role", role);
 }
 
 export function clearSession() {
