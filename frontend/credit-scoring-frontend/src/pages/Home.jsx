@@ -101,25 +101,25 @@ export default function Home() {
             className={`nav-item ${activeTab === "dashboard" ? "active" : ""}`}
             onClick={() => setActiveTab("dashboard")}
           >
-            📊 Dashboard
+             Dashboard
           </button>
           <button
             className={`nav-item ${activeTab === "new_assessment" ? "active" : ""}`}
             onClick={() => setActiveTab("new_assessment")}
           >
-            📝 New Assessment
+             New Assessment
           </button>
           <button
             className={`nav-item ${activeTab === "history" ? "active" : ""}`}
             onClick={() => setActiveTab("history")}
           >
-            📁 My Applications
+            My Applications
           </button>
         </nav>
 
         <div className="sidebar-footer">
           <button className="logout-btn" onClick={handleLogout}>
-            🚪 Logout
+             Logout
           </button>
         </div>
       </aside>
