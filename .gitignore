@@ -1,39 +1,80 @@
-# Python
-venv/
-.venv/
-env/
+# ─── Django / Python ──────────────────────────────
 __pycache__/
 *.py[cod]
-*$py.class
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.ipynb_checkpoints/
-
-# Node / frontend
-node_modules/
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+build/
 dist/
-dist-ssr/
-*.local
+*.egg-info/
+.eggs/
 
-# Environment and secrets
+# ─── Environment Variables ─────────────────────────
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
 
-# Databases and local data
+# ─── Databases ─────────────────────────────────────
 *.sqlite3
+db.sqlite3
 *.db
 
-# IDEs
+# ─── Django Static (collected) ─────────────────────
+staticfiles/
+media/
+
+# ─── ML Artifacts (large binaries) ─────────────────
+ml_artifacts/*.pkl
+ml_artifacts/*.joblib
+ml_artifacts/*.h5
+# Keep JSON versions if small (uncomment the next line if not):
+# ml_artifacts/*.json
+
+# ─── Jupyter ───────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# ─── Node / React ──────────────────────────────────
+node_modules/
+dist/
+build/
+.vite/
+.next/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── IDE / Editors ─────────────────────────────────
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
 *.swp
+*.swo
 
-# OS
+# ─── OS ────────────────────────────────────────────
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+desktop.ini
 
-# Logs
+# ─── Logs ──────────────────────────────────────────
 *.log
+logs/
+
+# ─── Testing / Coverage ────────────────────────────
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ─── Secrets and Credentials ───────────────────────
+*.pem
+*.key
+credentials.json
+service-account*.json
