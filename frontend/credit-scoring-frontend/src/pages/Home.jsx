@@ -227,4 +227,202 @@ export default function Home() {
               )}
             </div>
           )}
+          {/* TAB 2: NEW ASSESSMENT APPLICATION (Matches Wireframe Page 2) */}
+          {activeTab === "new_assessment" && (
+            <div className="form-view">
+              <h2>New Credit Assessment Request</h2>
+              <p className="subtitle">
+                Submit your business operational data to evaluate credit risk using alternative indicators.
+              </p>
+
+              {error && <div className="error-banner">{error}</div>}
+
+              <form onSubmit={handleSubmitAssessment} className="assessment-form">
+                <fieldset>
+                  <legend>1. Business Details</legend>
+                  <div className="form-grid">
+                    <div>
+                      <label>Business Name</label>
+                      <input
+                        name="business_name"
+                        value={form.business_name}
+                        onChange={handleInputChange}
+                        placeholder="e.g. Eldoret Fresh Supplies"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Sector</label>
+                      <select name="sector" value={form.sector} onChange={handleInputChange}>
+                        <option value="Retail">Retail</option>
+                        <option value="Manufacturing">Manufacturing</option>
+                        <option value="Services">Services</option>
+                        <option value="Agriculture">Agriculture</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Legal Status</label>
+                      <select name="legal_status" value={form.legal_status} onChange={handleInputChange}>
+                        <option value="Sole">Sole Proprietorship</option>
+                        <option value="Partnership">Partnership</option>
+                        <option value="Limited">Limited Liability Company</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Location / County</label>
+                      <input
+                        name="location"
+                        value={form.location}
+                        onChange={handleInputChange}
+                        placeholder="e.g. Nairobi, Nakuru"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Business Age (Years)</label>
+                      <input
+                        type="number"
+                        name="business_age_years"
+                        value={form.business_age_years}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Number of Employees</label>
+                      <input
+                        type="number"
+                        name="employees_count"
+                        value={form.employees_count}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+
+                <fieldset>
+                  <legend>2. Financial Behaviour & Capacity</legend>
+                  <div className="form-grid">
+                    <div>
+                      <label>Monthly Revenue (KES)</label>
+                      <input
+                        type="number"
+                        name="monthly_revenue"
+                        value={form.monthly_revenue}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Monthly Profit (KES)</label>
+                      <input
+                        type="number"
+                        name="monthly_profit"
+                        value={form.monthly_profit}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Requested Exposure / Assessment Amount (KES)</label>
+                      <input
+                        type="number"
+                        name="loan_amount"
+                        value={form.loan_amount}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Preferred Tenure (Months)</label>
+                      <input
+                        type="number"
+                        name="tenure_months"
+                        value={form.tenure_months}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label>Cashflow Consistency (1 - Irregular to 5 - Stable)</label>
+                      <select
+                        name="cashflow_stability"
+                        value={form.cashflow_stability}
+                        onChange={handleInputChange}
+                      >
+                        <option value={1}>1 - Highly volatile</option>
+                        <option value={2}>2 - Irregular seasonal</option>
+                        <option value={3}>3 - Moderate consistency</option>
+                        <option value={4}>4 - High stability</option>
+                        <option value={5}>5 - Very consistent daily turnover</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Days Payable Outstanding (Working Capital)</label>
+                      <input
+                        type="number"
+                        name="days_payable_outstanding"
+                        value={form.days_payable_outstanding}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+
+                <div className="form-actions">
+                  <button type="submit" className="primary-btn" disabled={busy}>
+                    {busy ? "Evaluating Credit Model..." : "Submit for Credit Risk Assessment"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 3: APPLICATIONS HISTORY */}
+          {activeTab === "history" && (
+            <div className="history-view">
+              <h2>Assessment Applications History</h2>
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>Assessment ID</th>
+                    <th>Business Name</th>
+                    <th>Revenue</th>
+                    <th>Score</th>
+                    <th>Risk Band</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestAssessment ? (
+                    <tr>
+                      <td>{latestAssessment.id || "ASSESS-1092"}</td>
+                      <td>{latestAssessment.business_name || form.business_name || "Apex Traders"}</td>
+                      <td>KES {Number(latestAssessment.monthly_revenue || form.monthly_revenue).toLocaleString()}</td>
+                      <td>
+                        <strong>{latestAssessment.credit_score || 742}</strong>
+                      </td>
+                      <td>
+                        <span className="tag-low">{latestAssessment.risk_category || "Low Risk"}</span>
+                      </td>
+                      <td>{latestAssessment.created_at || "Recent"}</td>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: "center" }}>
+                        No assessment logs available.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
 
