@@ -1,22 +1,22 @@
-import { useState } from "react"
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Signup from "./pages/Signup";
+import Login from "./pages/Login";
+import Home from "./pages/Home";
+import { getToken } from "./lib/api";
 
-import { LoginForm } from "@/components/login-form"
-import { SignupForm } from "@/components/signup-form"
-
-function App() {
-  const [view, setView] = useState("login")
-
-  return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        {view === "login" ? (
-          <LoginForm onSwitchToSignup={() => setView("signup")} />
-        ) : (
-          <SignupForm onSwitchToLogin={() => setView("login")} />
-        )}
-      </div>
-    </div>
-  )
+function Private({ children }) {
+  return getToken() ? children : <Navigate to="/login" />;
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/signup" />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/home" element={<Private><Home /></Private>} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
