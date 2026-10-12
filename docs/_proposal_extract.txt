@@ -1,0 +1,328 @@
+A Web based Credit Scoring System for Micro, Small, Medium Enterprises using Gradient Boosting Algorithms
+Lusalenge, Bradley Ian
+169384
+BBIT 4A
+Supervisor Name
+Dr. Njeri Ngaruiya
+An Information System Project Proposal Submitted to the School of Computing and Engineering Sciences in Partial Fulfillment of the Requirements for the Award of a Degree in Bachelor of Business in Information Technology
+School of Computing and Engineering Sciences
+Strathmore University
+Nairobi, Kenya
+June 2026
+Declaration and Approval
+I declare that this work has not been previously submitted and approved for the award of a degree by this or any other University. To the best of my knowledge and belief, the research proposal contains no material previously published or written by another person except where due reference is made in the research proposal itself.
+Student Name: Lusalenge, Bradley Ian
+Admission Number: 169384
+Student Signature:_________________________ Date:________________________
+The Proposal of Lusalenge, Bradley Ian was reviewed and approved by Dr. Ngaruiya
+Supervisor Signature:_________________________ Date:________________________
+I would like to extend my sincere gratitude to my supervisor Dr. Njeri Ngaruiya for her invaluable guidance, constructive feedback and continuous support during the development of this research project. Her knowledge and encouragement were invaluable to the successful completion of this study.
+Special thanks to my fellow students, friends and colleagues who gave valuable insights, suggestions and encouragement during the course of this project.
+Kenya’s economy is fuelled by Micro, Small and Medium Enterprises (MSMEs) that contribute more than 40 % of the national GDP and support around 14.9 million jobs in 7.4 million enterprises. MSMEs play a vital economic role, but still face a persistent financing gap that is estimated at more than 3.3 trillion Kenyan Shillings. This is largely due to their inability to meet the collateral requirements, formal credit histories, and documentation standards required by the traditional credit assessment frameworks used by lending institutions. While credit scoring systems are starting to emerge based on Credit Reference Bureaus and early alternative data platforms, these are opaque and collateral based thus systematically excluding creditworthy enterprises from accessing formal credit. This study proposes the design and development of a web based , explainable AI- supported credit risk scoring system for MSMEs in Kenya. The proposed system will utilize structured alternative financial and behavioural data, including demographic data, and utility payment behaviour to evaluate creditworthiness . The system development will be guided by the prototyping methodology while for system modelling Object-Oriented Analysis and Design(OOAD) will be used. Gradient Boosting Algorithms, specifically XGBoost will serve as the primary classification model and will be tested using AUC-ROC and F1-score metrics . SHapley Additive exPlanations (SHAP)values will be used to generate explanations of every credit decision. The system is expected to demonstrate that alternative data combined with explainable machine learning can improve credit accessibility and promote financial inclusion for MSMEs in Kenya .
+Keywords: AI- supported credit risk scoring system , Gradient Boosting Algorithms
+Table of Contents
+Declaration and Approvalii
+Acknowledgementiii
+Abstractiv
+List of Figuresviii
+List of Tablesix
+Abbreviationsx
+Chapter One :Introduction1
+1.1 Background Statement1
+1.2 Problem Statement2
+1.3 Objectives2
+1.3.1 General Objective2
+1.3.2 Specific Objectives2
+1.4 Research Questions3
+1.5 Justification3
+1.6 Scope and Delimitations3
+1.7 Limitations4
+Chapter Two :Literature Review5
+2.1 Introduction5
+2.2 Challenges Associated with Traditional Credit Risk Assessment for MSMEs in Kenya5
+2.2.1 Information Asymmetry5
+2.2.2 The use of collateral as a non-price condition6
+2.2.3 Limited credit history6
+2.3 Review of existing  credit scoring approaches7
+2.3.1 Traditional rule-based and statistical systems7
+2.3.2 Deep Learning Architectures8
+2.3.3 Tree-based machine learning models9
+2.3.4 Empirical Study9
+2.4 Existing Systems10
+2.4.1 Patascore10
+2.4.2 M-shwari11
+2.5 Gaps in related works12
+2.6 Conceptual Diagram12
+Chapter Three :Methodology14
+3.1 Introduction14
+3.2 Methodology14
+3.2.1 Requirements Gathering and analysis15
+3.2.2 Quick Design15
+3.2.3 User Evaluation17
+3.2.4 Refining Prototype18
+3.2.5 Implementing and Testing19
+3.3 Deliverables19
+3.3.1 Research Proposal19
+3.3.2 Machine Learning Model19
+3.3.3 User Interface20
+3.3.4 Distributed Systems21
+3.4 Tools and Techniques21
+3.4.1 Python21
+3.4.2 Pandas and Numpy21
+3.4.3 Scikit-learn and XGBoost for Machine Learning22
+3.4.4 Backend API – FASTAPI22
+3.4.5 Database – PostgreSQL22
+3.4.6 React – Frontend Development22
+3.4.7 Github and VSCode – Development environment and version control22
+3.4.8 Jupyter Notebook23
+References24
+Appendices27
+Appendix.A :Gannt Chart27
+Appendix.B : Originality Report28
+List of Figures
+Figure 2.1 FICO Score8
+Figure 2.2 Patascore Credit Score System11
+Figure 2.3 Conceptual Diagram13
+Figure 3.1 Prototyping Model14
+Figure A.1 Gantt Chart26
+List of Tables
+Table 2.1 Empirical Summary10
+Table 3.1 Test Cases18
+Abbreviations
+AI – Artificial Intelligence
+API- Application Programming Interface
+B2B – Business to business
+CRB – Credit Reference Bureau
+FICO - Fair Isaac Corporation
+GDP – Gross Domestic Profit
+MSMEs – Micro, Small and Medium Enterprises
+SACCO - Savings and Credit Cooperative Organization
+SHAP -Shapley Additive Explanations
+XAI – Explainable Artificial Intelligence
+:Introduction
+Background Statement
+Micro, Small, and Medium Enterprises (MSMEs) are globally recognized as the backbone of a healthy economy(Kanini et al.,2022.) .They are drivers of innovation, job creation, and poverty reduction, especially in developing nations where they often account for the vast majority of the market body(Cao, 2025). In the Kenyan context, MSMEs offer employment opportunities to approximately 6.4 million Kenyans, forming 84% of the country’s total workforce, and contributing 34% to her GDP(Kanini et al.,2022).
+Despite their critical economic role, MSMEs consistently encounter financing difficulties and a cautious approach from financial credit lenders . Commercial banks, SACCOs, and microfinance institutions rely predominantly on Credit Reference Bureau (CRB) listings, formal payslips, audited financial statements, and tangible collateral as the primary instruments of creditworthiness evaluation(Rehman et al.,2025). However, these methods are often ineffective for MSMEs because small firms may provide unreliable, false, or completely missing financial data.  Furthermore, MSMEs generally lack the tangible collateral required by traditional banking systems, which often use title deeds, vehicle logbooks, and household items as collateral to reduce transaction costs, leading to high rejection rates(Cao, 2025).
+The evolution of big data and FinTech solutions in the last decade has introduced a noticeable shift in how credit risk is managed(Parthiban et al., 2024). In Kenya, the success of mobile money platforms has provided a vast data infrastructure, allowing for the emergence of digital lending and contextual credit scoring(Mwesigwa et al., 2026).Modern financial institutions are increasingly transitioning from qualitative suggestions to quantitative, AI-driven models to evaluate "thin-file" customers who lack formal credit histories.
+However, advanced models frequently face the "black box" problem, where their lack of interpretability hinders trust and adoption among applicants and prevents financially excluded borrowers from understanding how to improve their creditworthiness(Gicić et al., 2025).
+Problem Statement
+The current reality is characterized by a significant financing gap and alarming failure rates among MSMEs. According to Rehman et al. ,(2025) ,traditional credit assessment methods rely heavily on manual procedures and formal accounting documents , which are often unreliable or completely missing for small firms, leading to severe information asymmetry. Consequently, default rates in the Kenyan digital lending sector have soared to between 40% and 68.3% (Mwesigwa et al., 2026).
+Furthermore, current lending systems often fail to adequately capture the behavioural and financial realities of MSMEs, such as irregular cash flows, informal transaction patterns, and limited financial documentation(Kasina et al., 2025). Although alternative data sources such as mobile money transaction histories have increasingly been explored, many existing systems remain opaque, poorly adapted to the Kenyan MSME context, and difficult for both lenders and applicants to interpret(Olesopia, Tombe, et al., 2026).
+Objectives
+General Objective
+To develop a web-based AI-driven credit risk scoring framework for MSMEs in Kenya.
+Specific Objectives
+To identify the challenges associated with traditional credit risk assessment practices for MSMEs in Kenya.
+To review existing credit scoring approaches used in MSME lending.
+To design a web based credit scoring system using Gradient Boosting machine learning algorithms and Explainable Artificial Intelligence (XAI) techniques.
+To  develop a web based credit scoring system using Gradient Boosting machine learning algorithms and Explainable Artificial Intelligence (XAI) techniques.
+To test the proposed prototype.
+Research Questions
+What are the limitations associated with traditional credit risk assessment practices used for MSMEs in Kenya?
+What credit scoring approaches are currently used in MSME lending?
+How can a web based credit scoring system using Gradient Boosting machine learning algorithms and Explainable Artificial Intelligence (XAI) techniques be designed?
+How can a web based credit scoring system using Gradient Boosting machine learning algorithms and Explainable Artificial Intelligence (XAI) techniques be developed ?
+How will the proposed credit scoring system prototype be tested?
+Justification
+This study is necessary because improving access to credit remains a critical factor in supporting the growth and sustainability of MSMEs in Kenya. Many businesses continue to face limited access to formal credit due to the reliance of traditional lending systems on formal financial records, collateral and CRB histories(KIPPRA, 2024.) . This creates financial exclusion for MSMEs operating within the informal sectors . By leveraging machine learning techniques and alternative financial indicators, the proposed system seeks to provide a more objective and data-driven approach to credit risk assessment.
+This will be done by utilizing machine learning algorithms to analyse financial data (Talaat et al., 2024). In addition, the integration of Explainable Artificial Intelligence (XAI) techniques will improve transparency by providing interpretable reasons behind credit decisions(Zhou & Zhu, 2021). This study is further justified by the increasing adoption of digital financial services and the growing need for intelligent credit assessment systems tailored to the operational realities of Kenyan MSMEs.
+Scope and Delimitations
+The proposed study is to focus on the development of an Explainable credit risk scoring system specifically for Micro, Small and Medium Enterprises in Kenya. This study aims to explore how machine learning techniques can be applied to structured and also alternative  financial data to improve credit risk assessment within lending institutions. The study will specifically target Kenyan MSMSEs operating within informal sectors and lending institutions which are involved in lending of business loans (Mutembete, 2022).  The research will involve the design, training and testing,  of machine learning models, particularly Gradient Boosting algorithms, together with Explainable Artificial Intelligence techniques to improve interpretability of lending decisions.
+This study is confined to the Kenyan financial context and does not cover credit cultures or regulatory frameworks in other geographic regions(Kasina et al., 2025). This is because credit scoring dynamics and MSME financial behaviour may differ significantly across different geographical settings .
+Limitations
+The study is limited to simulated or synthetic datasets due to privacy, security, and accessibility restrictions surrounding real financial customer records from lending institutions such as SACCOs and banks(Mwesigwa, et al., 2026). Hence , the access to real labelled financial datasets containing MSME repayment histories may be limited. To mitigate this, the study will utilize simulated datasets generated using financial behaviour patterns and synthetic datasets from existing open sources. Second, , the proposed model may experience some bias due to the use of synthetic and simulated datasets, which may not capture the real world financial behaviour or situation of MSMEs. To mitigate thus, model evaluation metrics and techniques and Explainable Artificial Intelligence techniques will be used to incorporated explainability of credit decisions. In addition, time and computational hurdles may limit extensive experimentation and comparison with multiple machine learning algorithms and very large datasets. Therefore, the study will focus on a manageable number of models, particularly Gradient Boosting algorithms.
+:Literature Review
+Introduction
+This chapter provides a comprehensive survey and evaluation of exiting literature relevant to credit risk assessment for Micro, Small and Medium Enterprises.
+Overview of Credit Risk and MSME Financing
+Micro, Small and Medium Enterprises (MSMEs) play a critical developed and developing economies(Muguro Karanja & Makau A. Muathe, 2025). In Kenya, MSMEs contribute significantly to national GDP and provide employment to millions of people (Kanini et al., 2022.). Despite their economic importance, access to formal credit remains one of the most significant constraints affecting their growth and sustainability. Financial institutions such as banks, SACCOs and other microfinance institutions rely on credit risk assessment processes to determine the likelihood that a borrower will repay a loan.
+Challenges Associated with Traditional Credit Risk Assessment for MSMEs in Kenya
+There has been a persistent MSMEs’ financing gap in emerging and developing countries, that is the percentage of formal MSMEs that cannot or can only partially access credit. Despite the critical role MSMEs play in the economy, they face a persistent financing gap estimated at USD 19.3 billion, driven largely by the limitations of traditional credit assessment methods(Wairimu & Kiragu, 2026).
+Information Asymmetry
+Information asymmetry serves as a fundamental barrier in the Kenyan credit market because it creates a situation where the borrower possesses significantly more knowledge about their financial health than the lender (Wairimu & Kiragu, 2026). This results in a persistent struggle for financial institutions to ascertain the internal truth of an enterprise, as they lack the visbility required to accurately distinguish between safe and risky borrowers (Mwesigwa, et al., 2026). This phenomenon is often categorized as epistemic uncertainty which arises from a limited understanding of what can be accurately known and measured about a potential debtor in a fragmented data environment (Hagen & Dornbirn, 2024).
+A primary driver of this asymmetry is the informal nature of the Kenyan MSME sector where over 7.4 million enterprises contribute to the labour force but largely operate without formal business registration or certifications. Consequently, traditional financial indicators such as balance sheets, income statements and cash flow statements are frequently unreliable , false or entirely for small enterprises (Cao, 2025). Most MSMEs do not maintain rigorous financial record kepping or adhere to international standards and quality control , often channeling business funds into personal expenses or relying on family savings and salaried employment to sustain operations, which effectively makes them invisible to the formal banking system  (Wang, 2021). This lack of a verifiable paper trail forces lenders to view the sector as extremely risk-prone, leading to credit rationing where even creditworthy firms are denied access because the cost of investigating their actual viability is prohibitively high(Kiragu et al., 2026).
+The use of collateral as a non-price condition
+In the Kenyan financial sector, collateral fundamentally serves as a screening device that exists independently of the interest rate to mitigate the risks of lending to the MSME sector  (Wairimu & Kiragu, 2026). Financial institutions utilize these tangible assets most notably title deeds and vehicle logbooks as a critical fall-back position to ensure the recovery of the loan principal in the event of a default. This requirement is intended to solve the problem of credit rationing where banks deny credit to seemingly viable firms because the perceived risk of the unknown is too high to be compensated for by interest rates alone (Hagen & Dornbirn, 2024).
+Despite its utility for lenders, the insistence on tangible security acts as a major exclusionary barrier for the vast majority of Kenyan MSMEs who lack mortgageable assets. Empirical evidence shows that 74% of borrowers cite the lack of title deeds as the primary reason for their credit rejection, highlighting a profound mismatch between banking requirements and the asset base of small firms(Muguro Karanja & Makau A. Muathe, 2025). Beyond title deeds, lenders frequently demand other restrictive forms of security, such as household items, vehicle logbooks and salary pay slips, which further narrows the pool of eligible applicants.
+Limited credit history
+About 70% of Kenyan MSMEs are excluded from formal financial services due to a basic structural obstacle known as thin-file customer or credit invisible(Wairimu & Kiragu, 2026). Traditional banking environments find it difficultat times to determine the true creditworthiness of small business owners because the mostly rely on CRB reports and historical accounting data.Lenders are frequently forced to use expert guessing or subjective scorecards that rely on assumptions about cultural or behavioural data as a result of absence or traceable paper trailpaper trail (Mwesigwa, Jackson, et al., 2026). Due to this , underrepresented groups, such as young people , who are frequently perceived as high-risk merely because their financial lives are not recorded by legacy infrastructures, are disproportionately penalized by this systemic knowledge gap(Olesopia et al., 2026).
+Furthermore, the mismatch between traditional linear scoring models and the dynamic, nonlinear cash flows of MSMEs means that even creditworthy firms are subjected to credit rationing. Modern AI-driven frameworks and several Kenyan start-ups are moving toward alternate data sources to make the unbanked legible in order to lessen these difficulties.(Kumar et al., 2025). These technologies generate "symbolic surrogates" for a borrower's personality and ability by using digital footprints such mobile money transaction records, SMS scraping of financial alerts, and psychometric tests(Duman et al., 2023).This transition allows lenders to score borrowers with limited credit history filling the funding gap without the need for years of official credit history.
+Review of existing  credit scoring approaches
+A number of approaches put in place to address this problem . They are as follows :
+Traditional rule-based and statistical systems
+Systems like the FICO model rely on predetermined criteria and fixed indicators like income levels , debt to income ratios to determine creditworthiness. These systems evaluate the 5Cs of credit Character, Capacity, Capital, Collateral and Conditions using structured financial history .The FICO credit scoring model evaluates your credit risk based on five weighted factors from your credit report(Li et al., 2024). Payment history is the most important (35%), tracking whether you pay bills on time. Next is amounts owed (30%), focusing on your credit utilization ratio—the percentage of available credit you're using. Length of credit history (15%) considers how long your accounts have been open. Credit mix (10%) rewards having various account types (e.g., credit cards, loans), and new credit (10%) looks at recent hard inquiries and newly opened accounts. Scores range from 300 to 850, with higher scores indicating lower risk to lenders.They provide a clear predictable workflow for established clients but their capability to assess risk in dynamic environments is limited due to their static nature (Abdel Fattah Al-Slehat et al., 2024.)
+Figure 2.1 FICO Score
+Deep Learning Architectures
+Deep Learning architectures such as Recurrent Neural Networks(RNNs) and Long Short-Term Memory (LSTM) excel at handling high dimensional, unstructured data and capturing non-linear relationships whereby the rate of change between two variables is not constant . Long Short-Term Memory units specifically are proficient at identifying temporal dependencies in longitudinal credit histories (these are credit reports that track a borrower’s financial habits such as balances, payment statuses, and credit limits, month-by-month over a multi-year period, rather than just showing a static snapshot of their current debt.)(Gicić et al., 2025). These models can automatically extract hierarchical features from diverse datasets making them effective for detecting default patterns that traditional models often overlook .
+Tree-based machine learning models
+Machine learning models such as Random Forest and Extreme Gradient Boosting are capable of dicing granular financial variables such as net profit margins to identify complex split directions that minimize default prediction errors (Bücker et al., 2022). Empirical evidence suggests that tree based models are more stable and accurate than neural networks when applied to the financial variables found in balance sheets (Alagic et al., 2024).
+Empirical Study
+There are a number of approaches put in place to address the problems above . This section gives an overview of how they operate and what they address.
+Table 2.1 Empirical Summary of Existing Credit Scoring Systems
+SOURCE
+MAIN IDEA
+POPULATION OF STUDY
+RESULTS/CONCLUSIONS
+LIMITATIONS
+Hernes, M., Adaszyński, J., & Tutak, P. (2023)
+Credit Risk Modeling Using Interpreted XGBoost.
+Home Credit dataset (307,511 clients, 122 variables)
+Combining XGBoost with Explainable AI (XAI) tools like SHAP provides high predictive power (78.6% AUC) while maintaining transparency
+Study only compared XGBoost results to traditional logistic regression
+(Cao, 2025)
+Quantification and optimization of MSME credit risk strategies
+MSME data involving transaction information and credit ratings from one institution
+Decision trees and K-means clustering reduced loan defaults by 12.7% and increased efficiency
+Assumes stable firm behavior and does not account for unforeseen market shocks
+(Olesopia, Tombe, & Chweya, 2026)
+Leveraging Deep Learning for credit scoring in Kenya
+Literature review of past studies on deep learning in the financial sector
+RNNs and LSTMs are superior at capturing temporal dependencies in sequential financial behavior
+Notes hurdles regarding interpretability and regulatory compliance for deep learning
+(Wang, 2021)
+Credit risk assessment based on invoice data and supply-demand stability
+123 enterprises expecting to borrow from a bank
+Uses a dispersion coefficient to measure transaction stability; binary logistic regression achieved 95.8% accuracy
+Relies on a small sample size (123) and a simple binary logistic regression model
+Table 2.1 Empirical Summary
+Existing Systems
+There are existing systems put in place to curb this problem. This section gives an overview of how they operate and what they address.
+Patascore
+Patascore operates as a B2B service  meaning it sells its scoring engine through to lenders such as SACCOs and microfinance institutions rather than directly to borrowers through an API. Data processed by Patascore includes CRB data, unconventional data which includes mobile money transaction histories, farmer input data, and supply chain records. Patascore utilizes realtime bank and mobile money statements to reconstruct financial statements for the unbanked population(Patascore - AI Driven Credit Scoring Infrastructure for SME Lending, ) . Psychometric tests evaluate character traits like impulsivity and self-discipline to predict repayment capacity for applicants with no prior credit history (Duman et al., 2023). However, its dependence on mobile money transaction histories also structurally excludes applicants who transact informally without consistent digital records. In addition to that, the scoring engine is only sold to microfinance institutions , excluding the actual loan borrowers.
+Figure 2.2 Patascore Credit Score System
+M-shwari
+M-shwari assesses credit-worthiness, assigning individual credit limits, and lending to new applicants using an algorithm based on customer use of Safaricom services. The development of the original scorecard was initially based on the repayment performance of Safaricom customers who used the Okoa Jahazi airtime credit product. The credit-scoring algorithm consists of a set of telecommunication variables from Safaricom’s data related to airtime, airtime credit, M-PESA, and length of time as a customer. These are generated through a rigorous credit score development process. Each variable has differing weights and scores based on its predictive power. The telecommunication use history of potential new M-Shwari borrowers is assessed against these scorecard variables and a score is assigned. However, M-shwari is entirely dependent on Safaricom ecosystem data , therefore it cannot score borrowers outside the Safaricom network. It also scores consumer behaviour, and not business creditworthiness.
+Gaps in related works
+Despite the advancements achieved by the existing credit scoring systems, several limitations remain. The traditional rule based and statistical models are often rigid and unable to adapt to dynamic changes in borrower behaviour , resulting to exclusion of emerging borrowers and MSMSEs that lack tangible formal financial records . Tree-based machine learning models such as Random Forest and XGBoost provide high predictive accuracy, but they tend to be black-box systems, making it difficult for lenders to justify credit decisions and meet transparency requirements.
+Similarly, some deep learning architectures are limited by poor interpretability, high computational complexity and dependence on large amounts of training data, which may not always be possible in developing economies. The use of alternative data and behavioural scoring systems has increased financial inclusion through the use of mobile money transactions and psychometric indicators. However according to (Duman et al., 2023), the systems pose significant challenges in data privacy, and a potential for porous financial identities where resold SIM cards which belonged to other people in the past lead to inherited blacklisting burdens. There is therefore still need for a credit scoring framework that is predictive, transparent, explainable and suitable for MSMEs operating in data constrained environments such as Kenya.
+Conceptual Diagram
+The framework comprises six interconnected components operating across a web-based architecture. The process is initiated when the loan applicant or loan officer submits structured data through the web interface layer, which serves as the system's entry point. The system inputs layer captures categories of alternative data which includes demographic information, business details, financial behaviour indicators, psychometric assessment scores measuring financial attitude and risk orientation. The raw input data is then passed to the feature engineering pipeline, where it undergoes cleaning, categorical encoding, and the computation of derived features such as the debt-to-income ratio and income consistency score, transforming unstructured applicant responses into values which can be interpreted by the model. The feature vector will be passed to the machine learning model layer where a Gradient Boosting algorithm will compute a credit risk probability score and classify the applicant into a low, medium or high risk band. The explainability module will then decompose the model’s prediction into individual feature contributions, identifying the top factors that positively or negatively influenced the credit decision. All applicant records, scores, and explanations will be stored in a PostgreSQL database via the FastAPI backend. The system outputs layer delivers four results to both the loan officer and the applicant through the web dashboard the credit score  ,the risk category, the recommended loan limit and a plain language explanation of the key factors driving the decision.
+Figure 2.3 Conceptual Diagram
+:Methodology
+Introduction
+This chapter outlines the systematic approach which will be used to develop the proposed web-based credit risk assessment prototype. It details the selection of development methodologies, and the tools which will be applied throughout the project .
+Methodology
+The prototyping methodology will be adopted, for the design and development of the proposed system . Prototyping is an incremental approach to software development in which the software is developed through a series of prototypes until the final system meets the specified requirements (Real et al., 2021). Prototyping treats each iteration as a direct predecessor to the final deliverable, with each cycle building on and refining the output of the previous one
+Machine learning models perform better and better with better feature engineering, optimized hyperparameters and more data, meaning the machine learning model gets better progressively . The phases of the prototyping model include requirements gathering and analysis, quick design, building of the prototype, user evaluation, refining the prototype and implementing and maintaining the final product.
+Figure 3.1 Prototyping Model
+Requirements Gathering and analysis
+Requirements gathering is the systematic process of identifying, documenting and validating the functional and non-functional needs of a system before development begins. Requirements gathering is particularly important for this project because the system must cater to two different user groups: loan officers who need accurate and explainable credit risk assessments for making lending decisions and MSME loan applicants who require a straight forward and user friendly interface to submit their information and comprehend their credit outcomes. Requirements will be gathered through secondary data sources .These include research papers on alternative data credit scoring, institutional reports and documentation for the datasets which will be used in model training .
+Quick Design
+The second phase is a preliminary design or a quick design. In this stage, a simple design of the system is created. However, it is not a complete design. It gives a brief idea of the system to the user. The quick design helps in developing the prototype. The software to be used during this stage is draw.io. Draw.io was chosen because it is a free software and has built in UML shape libraries needed to draw the design diagrams.
+Design Approach
+The design approach to be used is Object Oriented Analysis Development(OOAD) . It focuses on identifying objects and entities with both data (attributes) and behaviours (methods) and their relationships to design a system.
+The proposed credit scoring system will operate on clearly identifiable real-world entities : applicants, loan applications, credit scores, and loan officers each of which possesses distinct attributes and behaviours that map naturally to object-oriented classes. Secondly, OOAD promotes the decomposition of complex systems into discrete, loosely coupled objects that can be developed and refined independently. This means that individual classes and their interactions can be refined across prototype iterations without requiring changes to unrelated system components because each component is encapsulated in its own object hierarchy.
+Analysis and Design Diagrams
+Use case diagrams - A Use Case Diagram is a visual way to show how users actors interact with a system and what functions the system provides. For this project, the use case diagram will identify two primary actors, the loan applicant and the loan officer and maps their respective interactions with the system including submitting a loan application, receiving a credit score and managing applicant records .
+Class Diagram – a class diagram shows the structure of a system by displaying its classes, their attributes, methods and relationships between them . For this project, the class diagram will define the core domain classes including loanApplicant, loanApplication, creditScore, and the MLModel, specifying the attributes each class will hold and the methods each class exposes.
+Sequence Diagram - A Sequence Diagram is used to visualize the interaction between objects in a sequential order. For this project, a sequence Diagrams will be produced for the two most critical system processes: the loan application submission and scoring workflow, and the explanation generation and presentation workflow. These diagrams trace the message flow from the user's interface interaction through the API layer and the feature engineering pipeline back to the dashboard presentation.
+System Sequence Diagram - A System Sequence Diagram is a specialised form of sequence diagram that models the interactions between external actors and the system as a whole .For this project, the system sequence diagram will specify the exact data inputs submitted by the loan officer and applicant through the frontend interface, the system events triggered by those inputs, and the structured responses returned.
+Entity Relationship Diagram - An entity relationship diagram (ER diagram or ERD) is a visual representation of how items in a database relate to each other. For this project, the ERD will define the entities applicant, loanApplication, crediScore and loanOfficer , specifying the primary and foreign keys which will establish relationships between them.
+Activity Diagram - Activity diagrams show the steps involved in how a system works, helping us understand the flow of control. The activity diagram for the credit scoring process will explicitly model the decision logic that categorises applicants into low, medium, and high risk bands.
+User Evaluation
+In this stage, the proposed system is presented to the client for an initial evaluation. It helps to find out the strength and weakness of the working model. Comment and suggestion are collected from the customer and provided to the developer(Real et al., 2021). It is a critical phase in evolutionary prototyping because it provides the empirical evidence needed to identify gaps, errors, and areas for refinement before the prototype is advanced to the next development cycle.
+Testing
+The machine learning model Gradient Boost algorithm will be tested individually before it is integrated into the prototype. The following tests will be carried out:
+Precision, Recall and F1 score – are computed to assess model performance specifically on the minority class ,defaulting applicants , which is the most consequential prediction in a credit scoring context.
+Receiver Operating Characteristic - Area Under the Curve( ROC-AUC) – this measures the model's ability to discriminate between defaulting and non-defaulting applicants across all classification thresholds.
+Confusion Matrix – helps explain the model behaviour .
+Testing type
+Black box testing will be used to test the prototype . While performing black box test, the tester knows the system architecture and will not have access to the source code (Maspupah, 2024). This is appropriate because it replicates the experience of an actual loan officer or applicant interacting with the system , they are concerned with whether the system produces correct and useful outputs, not with how the model internally computes them.
+Table 3.1 Test Cases
+Test Case
+Test Scenario
+Test Input
+Expected Result
+TC01
+User Login
+Valid username and password
+The user successfully logs into the system
+TC02
+Loan Application Submission
+Complete application form with valid data
+Application successfully submitted and stored in the database
+TC03
+Missing Required Fields
+Submit form with missing mandatory fields
+Validation message displayed
+TC04
+Credit Score Generation
+Applicant financial data entered
+System generated credit score
+TC05
+Risk Classification
+Applicant data processed through AI model
+Applicant classified as low, medium or high risk
+TC06
+Explanation Generation
+Credit score generated
+Explanation of contributing factors displayed
+TC07
+Database Storage
+Completed application submitted
+Applicant and
+Table 3.1 Test Cases
+Refining Prototype
+Prototype refinement is the iterative process of incorporating the findings from user evaluation to improve the accuracy, usability, and completeness of the working prototype(Real et al., 2021).
+The refinement process will follow a structured cycle. It will be categorised into model performance issues such as the model requiring retraining or feature re-engineering and interface or output issues such as requiring adjustments to the dashboard layout, explanation language, or score presentation. Each category of issue will be addressed in the corresponding system layer without disrupting components that will be already performing adequately. The following development tools and techniques will be deployed : Python, Python Libraries (Pandas, Sci-kit Learn and Numpy), Gradient Boost algorithms(XGBoost), FASTAPI, Github, PostgreSQL , React, Jupyter Notebook and SHAP (Shapley Additive Explanations).
+Implementing and Testing
+Once the final system is developed based on the final prototype, it is thoroughly tested and deployed to production. The system undergoes routine maintenance for minimizing downtime and prevent large-scale failures. The refined prototype is deployed in its intended operating environment and subjected to formal, structured testing to verify that it meets all defined functional and non-functional requirements. This phase is important because it provides the definitive evidence that the system functions correctly end-to-end , not merely as isolated components, but as an integrated system operating under realistic conditions.
+Deliverables
+The deliverables for the proposed system which meet the system requirements are outlined in this section.
+Research Proposal
+This document constitutes a comprehensive written document that articulates the research problem, justifies the significance of the study, defines the research objectives and questions, reviews the existing body of literature, and specifies the methodology through which the research will be conducted. Once approved by the supervisor and department, it outlines the scope, direction and boundaries of the project and serves as a reference document against which all subsequent work is judged. Second, it shows the researcher’s command of the problem area and the literature that exists before any system development is undertaken. Third, it offers a planning document with a defined structure that controls the development schedule and resource allocation during the project life cycle.
+Machine Learning Model
+The primary technical deliverable of this project is the machine learning model, and the main research contribution of this study.  It will be a trained classification model, an XGBoost ensemble model, that will be expected to take a structured vector of alternative data features as input and produce a credit risk probability score as output. This score will then be mapped to a categorical risk band (low, medium or high) and a recommended loan limit. It will provide a quantified assessment of each applicant's creditworthiness.
+The model development process will begin with dataset provenance, where data will be obtained from publicly available financial datasets, existing literature, and synthetically generated MSME records designed to reflect realistic financial behaviour within the Kenyan context. The dataset will then undergo a pre-processing stage involving data cleaning, handling missing values, encoding categorical variables, and preparing the data for machine learning analysis. Feature engineering techniques will subsequently be applied to derive meaningful predictors such as cash flow stability, debt-to-income ratios and income consistency.
+Model performance will be assessed using established classification metrics including Accuracy, Precision, Recall, F1-Score, and Area Under the Receiver Operating Characteristic Curve (AUC-ROC).In addition ,the SHAP explainability layer which will give the loan applicants and loan officers explanations for decisions will be incorporated.
+User Interface
+The user interface is the presentation layer deliverable which will enable loan officers and loan applicants to interact with the credit scoring system . It will be a web based dashboard which will provide two different modes of interaction which responds to the two main groups of users who will be identified in the use case diagram .
+The loan officer interface will provide a structured overview of the applicant management showing a list of submitted applications , their assigned risk category, the recommended loan limit, and an explanation panel highlighting the most important features that increased or decreased one’s credit score.
+The interface will offer the loan applicant a clean, accessible loan application form to submit their information . When they apply, they will be provided with a plain language summary of their credit outcome, which includes their score, risk category , recommended loan limit and an actionable explanation of key factors that influenced the decision , including specific steps they can take to improve their score in future applications, including specific steps they can take to improve their score in future applications.
+Distributed Systems
+The distributed system deliverable includes the complete integrated technical infrastructure through which the credit scoring application is accessed and run. The architecture is a distributed one hosted locally with three interconnected components, web-based frontend dashboard, backend API server and the PostgreSQL database.
+The distributed system is important because it confirms that the machine learning model and user interface are not just working components in a development environment, but are working correctly as a networked system integrated under conditions that are reflective of actual use.
+Tools and Techniques
+This section outlines the tools and techniques which will be used during the development of the proposed solution
+Python
+Python will be used as the primary programming language for all data processing, feature engineering, model training, evaluation, and backend API development in this project. This is because Python is a dominant language in machine learning research and practice, offering an unmatched ecosystem of specialised libraries for every stage of the machine learning development pipeline.
+Pandas and Numpy
+Pandas and Numpy will be used for data processing .Pandas is used for all structured data manipulation tasks such as loading datasets, cleaning missing values, encoding categorical variables, computing derived features, and preparing train-test splits. NumPy is used for all numerical computation tasks such as array operations, statistical calculations, and matrix manipulations underlying the feature engineering pipeline. These libraries are selected because they provide efficient, well-documented, and extensively tested implementations of the data operations that form the foundation of any machine learning pipeline.
+Scikit-learn and XGBoost for Machine Learning
+Scikit learn provides simple, efficient, and reusable tools for predictive data analysis, statistical modeling, and machine learning. It abstracts away the complex underlying mathematics. This allows developers to train complex artificial intelligence models with just a few lines of code.
+XGBoost will be used as the primary credit scoring model. It is selected on the basis of extensive empirical evidence demonstrating its superior performance on structured tabular financial data ,  the data type on which this project's credit scoring model is trained.
+Backend API – FASTAPI
+The backend for the REST API is developed in FastAPI which represents the credit scoring model as a web service to the frontend dashboard. FASTAPI will be used because of its high performance request handling and is benchmarked as one of the fastest Python web frameworks available .
+Database – PostgreSQL
+PostgreSQL will be used as the relational database management system for persisting all applicant records, loan applications and credit scores. PostgreSQL is selected for its robustness, its compliance with ACID transaction properties.
+React – Frontend Development
+The system’s web based user interface that communicates with the system will be built with the help of React. React will enable the development of the display of the credit score, the panel for the recommendation of the loan limit , the visualization of the SHAP explanations and the application form .
+Github and VSCode – Development environment and version control
+Visual Studio Code will be used as the primary integrated development environment for all coding tasks across the project. This is because of its lightweight performance , and a vast collection of extensions for various programming languages. GitHub will be used for version control throughout the development phases. Every prototype iteration will be committed with descriptive messages that document what was changed and what evaluation finding prompted the change.
+Jupyter Notebook
+Jupyter Notebook will be used during the Exploratory Data Analysis phase to support interactive experimentation with the training datasets. Jupyter’s cell-based execution model allows individual data transformation steps and model training runs to be executed an evaluated in isolation making it well suited to the exploratory nature of machine learning development
+Abdel Fattah Al-Slehat, Z., Radwan Almanaseer, S., Mustafa Mahmoud Al Sharif, B., Emnawer Al-Haraisa, Y., Daood Aloshaibat, S., & Abdlwhab Almahasneh, M. (n.d.). International Review of Management and Marketing Creditworthiness Criteria According to the 5Cs Model and Credit Decision: The Moderating Role of Intellectual Capital. International Review of Management and Marketing |, 2024(6), 274–287. https://doi.org/10.32479/irmm.17257
+Alagic, A., Zivic, N., Kadusic, E., Hamzic, D., Hadzajlic, N., Dizdarevic, M., & Selmanovic, E. (2024). Machine Learning for an Enhanced Credit Risk Analysis: A Comparative Study of Loan Approval Prediction Models Integrating Mental Health Data. Machine Learning and Knowledge Extraction 2024, Vol. 6, Pages 53-77, 6(1), 53–77. https://doi.org/10.3390/MAKE6010004
+Bücker, M., Szepannek, G., Gosiewska, A., & Biecek, P. (2022). Fairness in credit scoring: Assessment, implementation and profit implications. Elsevier, 73(1), 70–90. https://doi.org/10.1080/01605682.2021.1922098
+Cao, W. (2025). Research on Credit Risk Quantification and Optimization Strategies for Micro, Small and Medium Enterprises (MSMEs). Proceedings of 2025 4th International Conference on Cyber Security, Artificial Intelligence and the Digital Economy, CSAIDE 2025, 140–145. https://doi.org/10.1145/3729706.3729727
+Duman, E., Aktas, M. S., & Yahsi, E. (2023). Credit Risk Prediction Based on Psychometric Data. Computers 2023, Vol. 12, Page 248, 12(12), 248. https://doi.org/10.3390/COMPUTERS12120248
+Gicić, A., Đonko, D., Gicić, A., & Đonko, D. (2025). Revolutionizing Credit Risk Management: Opportunities and Challenges in Credit Scoring with AI and Deep Learning. https://doi.org/10.5772/INTECHOPEN.1011543
+Hagen, B., & Dornbirn, B. M. (2024). Navigating Market Conditions Analysing the Systemic Challenges and Efficient Solutions for MSMEs Financing in Emerging Economies-A Kenyan Perspective.
+Kanini, K., Muathe, S., Social, H. B.-I. J. of, & 2022, undefined. (n.d.). Social capital, organizational innovation and performance of manufacturing msmes in Kenya. Ir-Library.Ku.Ac.Ke, 4, 2617–359. Retrieved June 11, 2026, from https://ir-library.ku.ac.ke/bitstream/123456789/25743/1/Social%20Capital%2C%20Organizational%20Innovation%20and%20Performance%20of%20Manufacturing%20MSMEs%20in%20Kenya.pdf
+Kasina, M. M., Kihoro, J. M., & Kibet, A. (2025). Credit Risk Indicators for Microfinance Institutions within Machakos County, Kenya. Indian Journal of Computer Science and Technology, 4(03), 111–120. https://doi.org/10.59256/indjcst.20250403021
+Kumar, J. A., Babu, S. R., & Scholar, P. D. (2025). Enhancing Credit Scoring with Alternative Data and Machine Learning for Financial Inclusion. Researchgate.Net, XXVI, 4–5. https://www.researchgate.net/profile/Anil-Kumar-Jonnalagadda/publication/404390753_Enhancing_Credit_Scoring_with_Alternative_Data_and_Machine_Learning_for_Financial_Inclusion/links/69f7149adb00ec75d02e788f/Enhancing-Credit-Scoring-with-Alternative-Data-and-Machine-Learning-for-Financial-Inclusion.pdf
+Li, Y., Eng, Y. S.-Appl. Comput., & 2024, undefined. (2024). Credit Evaluation System Based on FICO. Pdfs.Semanticscholar.Org. https://doi.org/10.54254/2755-2721/96/2024.17854
+Maspupah, A. (2024). LITERATURE REVIEW: ADVANTAGES AND DISADVANTAGES OF BLACK BOX AND WHITE BOX TESTING METHODS. Jurnal Techno Nusa Mandiri, 21(2), 151–162. https://doi.org/10.33480/TECHNO.V21I2.5776
+Muguro Karanja, J., & Makau A. Muathe, S. (2025). Access to Credit and Firm Performance: Evidence from Micro and Small Enterprises in Murang’a County, Kenya. Journal of Business and Management Sciences, 13(3), 70–80. https://doi.org/10.12691/JBMS-13-3-4
+Mutembete, M. (2022). Credit risk assessment model using machine learning. https://repository.kcau.ac.ke/bitstream/handle/123456789/1268/Mutembete-Credit%20Risk%20Assessment%20Model%20Using%20Machine%20Learning.pdf?sequence=1&isAllowed=y
+Mwesigwa, D., Jackson, S. J., & Csikszentmihalyi, C. (2026). Risk, Data, Alignment: Making Credit Scoring Work in Kenya. Proceedings of the 2026 CHI Conference on Human Factors in Computing Systems (CHI ’26), April 13â•ﬁ17, 2026, Barcelona, Spain, 1, 19. https://doi.org/10.1145/3772318.3790924;JOURNAL:JOURNAL:ACMCONFERENCES;PAGEGROUP:STRING:PUBLICATION
+Olesopia, S., Tombe, R., … R. C. I. S. and, & 2026, undefined. (2026). Leveraging deep learning methods on credit scoring in the financial sector in Kenya. Iajournals.Org, 2(1), 387–397. http://www.iajournals.org/articles/iajist_v2_i1_387_397.pdf
+Parthiban, M., Krishnamoorthy, M. P., Kohli, N. K., Adhav, S., & Mohinuddeen, K. (2024). Big data analytics in FinTech: A review of credit risk assessment and fraud detection. Researchgate.Net, 2024(5), 3676–3684. https://doi.org/10.53555/kuey.v30i5.3514
+Patascore - AI Driven Credit Scoring Infrastructure for SME Lending. (n.d.). Retrieved June 9, 2026, from https://patascore.com/
+Real, R. ;, Snider, C. ;, Goudswaard, M. ;, & Hicks, B. (2021). Dimensions of Knowledge in Prototyping: A Review and Characterisation of Prototyping Methods and Their Contributions to Design Knowledge. 16–20. https://doi.org/10.1017/pds.2021.130
+Rehman, M., Ahmed, M., Social, S. S.-T. C. R. of, & 2025, undefined. (n.d.). AI-based credit scoring models in microfinance: improving loan accessibility, risk assessment, and financial inclusion. Thecrsss.Com. Retrieved May 18, 2026, from https://thecrsss.com/index.php/Journal/article/view/370
+Wairimu, S. ;, & Kiragu, D. (2026a). Provided in Cooperation with: Kenya Bankers Association (KBA). KBA Centre for Research on Financial Markets and Policy Working Paper Series, (104). https://hdl.handle.net/10419/340181
+Wang, J. (2021). A study on credit risk assessment and credit decision making based on micro, small and medium enterprises. Journal of Physics: Conference Series, 1903(1). https://doi.org/10.1088/1742-6596/1903/1/012037
+:Gannt Chart
+Figure A.1 Gantt Chart
+: Originality Report
