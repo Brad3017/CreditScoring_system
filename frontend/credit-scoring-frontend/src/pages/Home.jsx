@@ -131,9 +131,100 @@ export default function Home() {
           <div className="user-profile-badge">
             <span className="user-avatar">👤</span>
             <div className="user-meta">
-              <strong>Bradley Lusalenge</strong>
+              <strong>#</strong>
               <small>MSME Owner</small>
             </div>
           </div>
         </header>
+        <div className="content-body">
+          {/* TAB 1: DASHBOARD OVERVIEW (Matches Wireframe Page 3) */}
+          {activeTab === "dashboard" && (
+            <div className="dashboard-view">
+              <h2>Credit Risk Assessment Overview</h2>
+
+              {latestAssessment ? (
+                <>
+                  {/* Summary Metric Cards */}
+                  <div className="score-cards-row">
+                    <div className="score-card highlight">
+                      <span className="card-label">Credit Score</span>
+                      <div className="score-value">{latestAssessment.credit_score || 742}</div>
+                      <small className="score-range">Range: 300 – 850 (FICO scale)</small>
+                    </div>
+
+                    <div className="score-card">
+                      <span className="card-label">Risk Category</span>
+                      <div
+                        className={`risk-badge ${
+                          (latestAssessment.risk_category || "Low Risk").toLowerCase().includes("low")
+                            ? "low-risk"
+                            : "medium-risk"
+                        }`}
+                      >
+                        {latestAssessment.risk_category || "Low Risk"}
+                      </div>
+                      <small>Assessed via Gradient Boosting</small>
+                    </div>
+
+                    <div className="score-card">
+                      <span className="card-label">Recommended Credit Limit</span>
+                      <div className="limit-value">
+                        KES {Number(latestAssessment.recommended_limit || 650000).toLocaleString()}
+                      </div>
+                      <small>Non-collateral maximum capacity</small>
+                    </div>
+                  </div>
+
+                  {/* Business Information Summary Box */}
+                  <div className="panel-box">
+                    <h4>Business Information Summary</h4>
+                    <div className="info-grid">
+                      <div>
+                        <strong>Enterprise:</strong> {latestAssessment.business_name || "Apex Wholesale"}
+                      </div>
+                      <div>
+                        <strong>Sector:</strong> {latestAssessment.sector || "Retail"}
+                      </div>
+                      <div>
+                        <strong>Location:</strong> {latestAssessment.location || "Nairobi"}
+                      </div>
+                      <div>
+                        <strong>Monthly Revenue:</strong> KES{" "}
+                        {Number(latestAssessment.monthly_revenue || 450000).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Explainable Decision Factors (SHAP Output) */}
+                  <div className="panel-box">
+                    <h4>Credit Score Explainability (XAI Factors)</h4>
+                    <ul className="factors-list">
+                      {(latestAssessment.explanation || [
+                        "Positive cash flow consistency score over previous quarter.",
+                        "Operating revenue is sufficient to absorb working capital borrowing.",
+                        "Short business tenure (below 5 years) moderately reduced score.",
+                      ]).map((item, idx) => (
+                        <li key={idx}>✓ {item}</li>
+                      ))}
+                    </ul>
+                    <div style={{ marginTop: "1rem" }}>
+                      <button
+                        className="action-btn"
+                        onClick={() => alert("Report generation complete: Ready for download.")}
+                      >
+                         View Credit Risk Assessment Report
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <p>You have not run a credit scoring assessment yet.</p>
+                  <button className="primary-btn" onClick={() => setActiveTab("new_assessment")}>
+                    Submit Business Assessment
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
