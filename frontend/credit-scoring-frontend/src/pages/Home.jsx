@@ -373,7 +373,7 @@ export default function Home() {
                       />
                     </div>
                     <div>
-                      <label>Requested Loan Facility (KES)</label>
+                      <label>Indicative Credit Amount Requested (KES)</label>
                       <input
                         type="number"
                         name="loan_amount"
@@ -383,7 +383,7 @@ export default function Home() {
                       />
                     </div>
                     <div>
-                      <label>Preferred Tenure (Months)</label>
+                      <label>Indicative Period (Months)</label>
                       <input
                         type="number"
                         name="tenure_months"
