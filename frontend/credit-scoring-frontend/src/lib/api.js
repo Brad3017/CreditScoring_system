@@ -76,3 +76,19 @@ export async function fetchMe() {
   if (!res.ok) throw new Error("Unauthorized");
   return res.json();
 }
+
+export async function fetchAllAssessments() {
+  const res = await fetch(`${BASE}/assessments/`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error("Failed to load assessments");
+  return res.json();
+}
+
+export async function fetchAssessmentDetail(id) {
+  const res = await fetch(`${BASE}/assessments/${id}/`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error("Failed to load assessment");
+  return res.json();
+}
