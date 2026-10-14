@@ -56,7 +56,7 @@ export default function Signup() {
           name="full_name"
           value={form.full_name}
           onChange={change}
-          placeholder="Jane Doe"
+          
           required
         />
 
@@ -66,7 +66,7 @@ export default function Signup() {
           name="email"
           value={form.email}
           onChange={change}
-          placeholder="you@example.com"
+         
           required
         />
 

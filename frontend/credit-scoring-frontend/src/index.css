@@ -1,3 +1,6 @@
+
+/* Your existing CSS code for other pages stays right below here! */
+
 /* ✅ Correct */
 *, *::before, *::after {
   box-sizing: border-box;
