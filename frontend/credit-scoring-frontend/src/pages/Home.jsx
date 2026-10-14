@@ -1,12 +1,22 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { clearSession, getRole, submitAssessment, fetchMyAssessments } from "../lib/api";
+import {
+  clearSession,
+  getRole,
+  getToken,
+  submitAssessment,
+  fetchMyAssessments,
+  fetchMe,
+} from "../lib/api";
 
 export default function Home() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("dashboard"); // 'dashboard' | 'new_assessment' | 'history'
+  const [activeTab, setActiveTab] = useState("dashboard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Logged-in user (fetched from /api/auth/me/)
+  const [user, setUser] = useState(null);
 
   // Latest calculated assessment
   const [latestAssessment, setLatestAssessment] = useState(null);
@@ -20,27 +30,37 @@ export default function Home() {
     location_type: "Urban",
     business_age_years: 3,
     employees_count: 3,
-    
+
     // Financial Metrics
     monthly_revenue_kes: 450000,
     monthly_profit_kes: 95000,
     loan_amount: 500000,
     tenure_months: 12,
-    days_payable_outstanding: 30, // Supplier credit days
-    cashflow_stability: 4,        // 1 to 5 scale
-    
+    days_payable_outstanding: 30,
+    cashflow_stability: 4,
+
     // Borrowing History & Credit Factors
     existing_loans: "No",
     prior_loan_count: 1,
     late_payment_history: "Never",
     collateral_level: "Moderate",
-    repayment_confidence: 4,      // 1 to 5 scale
+    repayment_confidence: 4,
     owner_education: "Secondary",
   });
 
   useEffect(() => {
     loadAssessments();
+    loadUser();
   }, []);
+
+  async function loadUser() {
+    try {
+      const me = await fetchMe();
+      setUser(me);
+    } catch (e) {
+      console.log("Could not load user:", e.message);
+    }
+  }
 
   async function loadAssessments() {
     try {
@@ -58,46 +78,46 @@ export default function Home() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  // Helper: is the user's profile complete?
+  const isProfileComplete =
+    user && user.national_id && user.phone && user.county;
+
   async function handleSubmitAssessment(e) {
     e.preventDefault();
-    setBusy(true);
     setError("");
 
+    // ─── Gate: profile must be complete ───
+    if (!isProfileComplete) {
+      setError(
+        "Please complete your profile (National ID, Phone, County) before submitting an assessment."
+      );
+      setActiveTab("dashboard");
+      return;
+    }
+
+    setBusy(true);
     try {
       const result = await submitAssessment(form);
       setLatestAssessment(result);
       setActiveTab("dashboard");
     } catch (err) {
-      // Calibrated fallback calculation using tuned XGBoost scale
-      const defaultProb = form.cashflow_stability <= 2 || form.late_payment_history === "Sometimes" ? 0.42 : 0.22;
-      const computedScore = Math.round(850 - defaultProb * 550); // 300 to 850 FICO-style
-      
-      const fallbackResult = {
-        id: "ASSESS-" + Math.floor(1000 + Math.random() * 9000),
-        business_name: form.business_name || "Apex Traders",
-        county: form.county,
-        sector: form.sector,
-        monthly_revenue: form.monthly_revenue_kes,
-        credit_score: computedScore,
-        probability_of_default: defaultProb,
-        risk_category: computedScore >= 700 ? "Low Risk" : computedScore >= 600 ? "Moderate Risk" : "High Risk",
-        recommended_limit: Math.round(Number(form.monthly_profit_kes) * 0.4 * 12),
-        explanation: [
-          form.cashflow_stability >= 4
-            ? "Positive: High sales predictability provides strong repayment resilience."
-            : "Caution: Volatile weekly cash flow increases default risk.",
-          form.late_payment_history === "Never"
-            ? "Positive: Excellent supplier settlement track record strengthens credit standing."
-            : "Caution: Past overdue payments negatively impacted the final score.",
-          `Positive: Monthly gross turnover (KES ${Number(form.monthly_revenue_kes).toLocaleString()}) provides adequate borrowing buffer.`
-        ],
-        created_at: new Date().toLocaleDateString(),
-      };
-      setLatestAssessment(fallbackResult);
-      setActiveTab("dashboard");
+      // No fallback — show the real error so we know the backend needs fixing
+      setError(
+        `Assessment failed: ${err.message}. Please try again or contact support.`
+      );
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleNewAssessmentClick() {
+    if (!isProfileComplete) {
+      setError("Complete your profile first before starting an assessment.");
+      setActiveTab("dashboard");
+      return;
+    }
+    setError("");
+    setActiveTab("new_assessment");
   }
 
   function handleLogout() {
@@ -119,25 +139,35 @@ export default function Home() {
             className={`nav-item ${activeTab === "dashboard" ? "active" : ""}`}
             onClick={() => setActiveTab("dashboard")}
           >
-             Dashboard
+            Dashboard
           </button>
           <button
-            className={`nav-item ${activeTab === "new_assessment" ? "active" : ""}`}
-            onClick={() => setActiveTab("new_assessment")}
+            className={`nav-item ${
+              activeTab === "new_assessment" ? "active" : ""
+            }`}
+            onClick={handleNewAssessmentClick}
           >
-             New Assessment
+            New Assessment
+            {user && !isProfileComplete && (
+              <span
+                title="Complete your profile first"
+                style={{ marginLeft: "8px", color: "#f59e0b" }}
+              >
+                ●
+              </span>
+            )}
           </button>
           <button
             className={`nav-item ${activeTab === "history" ? "active" : ""}`}
             onClick={() => setActiveTab("history")}
           >
-             My Applications
+            My Applications
           </button>
         </nav>
 
         <div className="sidebar-footer">
           <button className="logout-btn" onClick={handleLogout}>
-             Logout
+            Logout
           </button>
         </div>
       </aside>
@@ -149,7 +179,7 @@ export default function Home() {
           <div className="user-profile-badge">
             <span className="user-avatar"></span>
             <div className="user-meta">
-              <strong>MSME Business Owner</strong>
+              <strong>{user?.full_name || "MSME Business Owner"}</strong>
               <small>Registered Applicant</small>
             </div>
           </div>
@@ -159,7 +189,12 @@ export default function Home() {
           {/* TAB 1: DASHBOARD OVERVIEW */}
           {activeTab === "dashboard" && (
             <div className="dashboard-view">
-              <h2>Credit Risk Assessment </h2>
+              <h2>Credit Risk Assessment</h2>
+
+              {/* ─── Profile Completion Panel ─── */}
+              {user && !isProfileComplete && (
+                <ProfileCompletionPanel user={user} onSaved={loadUser} />
+              )}
 
               {latestAssessment ? (
                 <>
@@ -167,17 +202,25 @@ export default function Home() {
                   <div className="score-cards-row">
                     <div className="score-card highlight">
                       <span className="card-label">Credit Score</span>
-                      <div className="score-value">{latestAssessment.credit_score}</div>
-                      <small className="score-range">Range: 300 – 850 (FICO standard)</small>
+                      <div className="score-value">
+                        {latestAssessment.credit_score}
+                      </div>
+                      <small className="score-range">
+                        Range: 300 – 850 (FICO standard)
+                      </small>
                     </div>
 
                     <div className="score-card">
                       <span className="card-label">Assessed Risk Tier</span>
                       <div
                         className={`risk-badge ${
-                          latestAssessment.risk_category.toLowerCase().includes("low")
+                          latestAssessment.risk_category
+                            .toLowerCase()
+                            .includes("low")
                             ? "low-risk"
-                            : latestAssessment.risk_category.toLowerCase().includes("moderate")
+                            : latestAssessment.risk_category
+                                .toLowerCase()
+                                .includes("moderate")
                             ? "medium-risk"
                             : "high-risk"
                         }`}
@@ -188,9 +231,14 @@ export default function Home() {
                     </div>
 
                     <div className="score-card">
-                      <span className="card-label">Max Recommended Limit</span>
+                      <span className="card-label">
+                        Max Recommended Limit
+                      </span>
                       <div className="limit-value">
-                        KES {Number(latestAssessment.recommended_limit || 0).toLocaleString()}
+                        KES{" "}
+                        {Number(
+                          latestAssessment.recommended_limit || 0
+                        ).toLocaleString()}
                       </div>
                       <small>Prudent capacity (40% profit buffer)</small>
                     </div>
@@ -201,38 +249,56 @@ export default function Home() {
                     <h4>Business Profile Summary</h4>
                     <div className="info-grid">
                       <div>
-                        <strong>Enterprise:</strong> {latestAssessment.business_name || form.business_name}
+                        <strong>Enterprise:</strong>{" "}
+                        {latestAssessment.business_name || form.business_name}
                       </div>
                       <div>
-                        <strong>Sector:</strong> {latestAssessment.sector || form.sector}
+                        <strong>Sector:</strong>{" "}
+                        {latestAssessment.sector || form.sector}
                       </div>
                       <div>
-                        <strong>County:</strong> {latestAssessment.county || form.county}
+                        <strong>County:</strong>{" "}
+                        {latestAssessment.county || form.county}
                       </div>
                       <div>
                         <strong>Monthly Revenue:</strong> KES{" "}
-                        {Number(latestAssessment.monthly_revenue || form.monthly_revenue_kes).toLocaleString()}
+                        {Number(
+                          latestAssessment.monthly_revenue ||
+                            form.monthly_revenue_kes
+                        ).toLocaleString()}
                       </div>
                     </div>
                   </div>
 
                   {/* Explainable Decision Factors (SHAP Output) */}
                   <div className="panel-box">
-                    <h4>Credit Score </h4>
-                    <p style={{ fontSize: "0.85rem", color: "#64748b", marginBottom: "0.75rem" }}>
-                      Key business indicators that determined your current score and borrowing capacity:
+                    <h4>Credit Score</h4>
+                    <p
+                      style={{
+                        fontSize: "0.85rem",
+                        color: "#64748b",
+                        marginBottom: "0.75rem",
+                      }}
+                    >
+                      Key business indicators that determined your current score
+                      and borrowing capacity:
                     </p>
                     <ul className="factors-list">
-                      {latestAssessment.explanation && latestAssessment.explanation.map((item, idx) => (
-                        <li key={idx} style={{ padding: "0.4rem 0" }}>
-                          {item}
-                        </li>
-                      ))}
+                      {latestAssessment.explanation &&
+                        latestAssessment.explanation.map((item, idx) => (
+                          <li key={idx} style={{ padding: "0.4rem 0" }}>
+                            {item}
+                          </li>
+                        ))}
                     </ul>
                     <div style={{ marginTop: "1.25rem" }}>
                       <button
                         className="action-btn"
-                        onClick={() => alert("Assessment report generated. You can submit this to your lending institution.")}
+                        onClick={() =>
+                          alert(
+                            "Assessment report generated. You can submit this to your lending institution."
+                          )
+                        }
                       >
                         Download Verified Assessment Report
                       </button>
@@ -242,7 +308,16 @@ export default function Home() {
               ) : (
                 <div className="empty-state">
                   <p>You have not run a credit scoring assessment yet.</p>
-                  <button className="primary-btn" onClick={() => setActiveTab("new_assessment")}>
+                  <button
+                    className="primary-btn"
+                    onClick={handleNewAssessmentClick}
+                    disabled={!isProfileComplete}
+                    title={
+                      !isProfileComplete
+                        ? "Complete your profile first"
+                        : ""
+                    }
+                  >
                     Submit Business Assessment
                   </button>
                 </div>
@@ -255,7 +330,7 @@ export default function Home() {
             <div className="form-view">
               <h2>New Business Credit Assessment</h2>
               <p className="subtitle">
-                Provide your operational and financial details .
+                Provide your operational and financial details.
               </p>
 
               {error && <div className="error-banner">{error}</div>}
@@ -277,7 +352,11 @@ export default function Home() {
                     </div>
                     <div>
                       <label>County of Operation</label>
-                      <select name="county" value={form.county} onChange={handleInputChange}>
+                      <select
+                        name="county"
+                        value={form.county}
+                        onChange={handleInputChange}
+                      >
                         <option value="Nairobi">Nairobi</option>
                         <option value="Kiambu">Kiambu</option>
                         <option value="Machakos">Machakos</option>
@@ -291,7 +370,11 @@ export default function Home() {
                     </div>
                     <div>
                       <label>Business Sector</label>
-                      <select name="sector" value={form.sector} onChange={handleInputChange}>
+                      <select
+                        name="sector"
+                        value={form.sector}
+                        onChange={handleInputChange}
+                      >
                         <option value="Retail">Retail</option>
                         <option value="Manufacturing">Manufacturing</option>
                         <option value="Services">Services</option>
@@ -300,7 +383,11 @@ export default function Home() {
                     </div>
                     <div>
                       <label>Legal Structure</label>
-                      <select name="legal_status" value={form.legal_status} onChange={handleInputChange}>
+                      <select
+                        name="legal_status"
+                        value={form.legal_status}
+                        onChange={handleInputChange}
+                      >
                         <option value="Sole">Sole Proprietorship</option>
                         <option value="Partnership">Partnership</option>
                         <option value="Limited">Limited Company</option>
@@ -308,7 +395,11 @@ export default function Home() {
                     </div>
                     <div>
                       <label>Operating Environment</label>
-                      <select name="location_type" value={form.location_type} onChange={handleInputChange}>
+                      <select
+                        name="location_type"
+                        value={form.location_type}
+                        onChange={handleInputChange}
+                      >
                         <option value="Urban">Urban / City Center</option>
                         <option value="Rural">Rural / Outlying</option>
                       </select>
@@ -337,10 +428,16 @@ export default function Home() {
                     </div>
                     <div>
                       <label>Highest Education of Owner</label>
-                      <select name="owner_education" value={form.owner_education} onChange={handleInputChange}>
+                      <select
+                        name="owner_education"
+                        value={form.owner_education}
+                        onChange={handleInputChange}
+                      >
                         <option value="Primary">Primary School</option>
                         <option value="Secondary">Secondary School</option>
-                        <option value="Higher Secondary">Higher Secondary / College Diploma</option>
+                        <option value="Higher Secondary">
+                          Higher Secondary / College Diploma
+                        </option>
                         <option value="Bachelor's">Bachelor's Degree</option>
                         <option value="Master's">Master's Degree</option>
                       </select>
@@ -426,7 +523,11 @@ export default function Home() {
                   <div className="form-grid">
                     <div>
                       <label>Any Existing Loans Running Now?</label>
-                      <select name="existing_loans" value={form.existing_loans} onChange={handleInputChange}>
+                      <select
+                        name="existing_loans"
+                        value={form.existing_loans}
+                        onChange={handleInputChange}
+                      >
                         <option value="No">No - No current loans</option>
                         <option value="Yes">Yes - Active loans running</option>
                       </select>
@@ -451,7 +552,9 @@ export default function Home() {
                       >
                         <option value="Never">Never (Always on time)</option>
                         <option value="Rarely">Rarely (1 delayed payment)</option>
-                        <option value="Sometimes">Sometimes (2 to 3 delays)</option>
+                        <option value="Sometimes">
+                          Sometimes (2 to 3 delays)
+                        </option>
                       </select>
                     </div>
                     <div>
@@ -461,9 +564,15 @@ export default function Home() {
                         value={form.collateral_level}
                         onChange={handleInputChange}
                       >
-                        <option value="Low">Low (Personal guarantee / Household)</option>
-                        <option value="Moderate">Moderate (Stock / Vehicle logbook / Machinery)</option>
-                        <option value="High">High (Title deed / Fixed deposit)</option>
+                        <option value="Low">
+                          Low (Personal guarantee / Household)
+                        </option>
+                        <option value="Moderate">
+                          Moderate (Stock / Vehicle logbook / Machinery)
+                        </option>
+                        <option value="High">
+                          High (Title deed / Fixed deposit)
+                        </option>
                       </select>
                     </div>
                     <div>
@@ -473,7 +582,9 @@ export default function Home() {
                         value={form.repayment_confidence}
                         onChange={handleInputChange}
                       >
-                        <option value={1}>1 - Low confidence / High strain</option>
+                        <option value={1}>
+                          1 - Low confidence / High strain
+                        </option>
                         <option value={2}>2 - Somewhat uncertain</option>
                         <option value={3}>3 - Moderate confidence</option>
                         <option value={4}>4 - High confidence</option>
@@ -484,8 +595,14 @@ export default function Home() {
                 </fieldset>
 
                 <div className="form-actions">
-                  <button type="submit" className="primary-btn" disabled={busy}>
-                    {busy ? "Evaluating Credit Model..." : "Submit for Credit Risk Assessment"}
+                  <button
+                    type="submit"
+                    className="primary-btn"
+                    disabled={busy}
+                  >
+                    {busy
+                      ? "Evaluating Credit Model..."
+                      : "Submit for Credit Risk Assessment"}
                   </button>
                 </div>
               </form>
@@ -511,13 +628,31 @@ export default function Home() {
                   {latestAssessment ? (
                     <tr>
                       <td>{latestAssessment.id || "ASSESS-1092"}</td>
-                      <td>{latestAssessment.business_name || form.business_name || "Baraka Hardware"}</td>
-                      <td>KES {Number(latestAssessment.monthly_revenue || form.monthly_revenue_kes).toLocaleString()}</td>
+                      <td>
+                        {latestAssessment.business_name ||
+                          form.business_name ||
+                          "Baraka Hardware"}
+                      </td>
+                      <td>
+                        KES{" "}
+                        {Number(
+                          latestAssessment.monthly_revenue ||
+                            form.monthly_revenue_kes
+                        ).toLocaleString()}
+                      </td>
                       <td>
                         <strong>{latestAssessment.credit_score}</strong>
                       </td>
                       <td>
-                        <span className={`tag-${latestAssessment.risk_category.toLowerCase().includes("low") ? "low" : "moderate"}`}>
+                        <span
+                          className={`tag-${
+                            latestAssessment.risk_category
+                              .toLowerCase()
+                              .includes("low")
+                              ? "low"
+                              : "moderate"
+                          }`}
+                        >
                           {latestAssessment.risk_category}
                         </span>
                       </td>
@@ -536,6 +671,101 @@ export default function Home() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────── */
+/* Profile Completion Panel                        */
+/* ──────────────────────────────────────────────── */
+function ProfileCompletionPanel({ user, onSaved }) {
+  const [form, setForm] = useState({
+    national_id: user.national_id || "",
+    phone: user.phone || "",
+    county: user.county || "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/auth/me/", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || "Failed to save profile");
+      }
+      onSaved();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="panel-box"
+      style={{
+        borderLeft: "4px solid #f59e0b",
+        background: "#fffbeb",
+      }}
+    >
+      <h4 style={{ marginTop: 0 }}>⚠️ Complete your profile</h4>
+      <p style={{ fontSize: "0.85rem", color: "#64748b" }}>
+        We need a few more details before you can request a credit assessment.
+      </p>
+
+      <form
+        onSubmit={save}
+        className="form-grid"
+        style={{ marginTop: "1rem" }}
+      >
+        <div>
+          <label>National ID</label>
+          <input
+            value={form.national_id}
+            onChange={(e) =>
+              setForm({ ...form, national_id: e.target.value })
+            }
+            placeholder="12345678"
+            required
+          />
+        </div>
+        <div>
+          <label>Phone Number</label>
+          <input
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            placeholder="+254 700 000 000"
+            required
+          />
+        </div>
+        <div>
+          <label>Home County</label>
+          <input
+            value={form.county}
+            onChange={(e) => setForm({ ...form, county: e.target.value })}
+            placeholder="Nairobi"
+            required
+          />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          {err && <p className="error">{err}</p>}
+          <button className="primary-btn" disabled={busy}>
+            {busy ? "Saving..." : "Save & Continue"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
