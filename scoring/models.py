@@ -19,33 +19,51 @@ class BusinessProfile(models.Model):
 
 
 class CreditRequest(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE)
-
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="credit_requests")
+    business = models.ForeignKey("businesses.Business", on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Facility specifics
+    loan_amount = models.DecimalField(max_digits=15, decimal_places=2, default=500000.00)
+    tenure_months = models.IntegerField(default=12)
+    
+    # Financial performance (Model features)
+    monthly_revenue_kes = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
     monthly_profit_kes = models.DecimalField(max_digits=15, decimal_places=2)
+    days_payable_outstanding = models.IntegerField(default=30)
+    cashflow_stability = models.IntegerField(default=3) # 1 to 5
+    
+    # Borrowing track record & security (Model features)
     existing_loans = models.BooleanField(default=False)
     prior_loan_count = models.IntegerField(default=0)
-    late_payment_history = models.CharField(max_length=20)
-    cashflow_stability = models.IntegerField()
-    repayment_confidence = models.IntegerField()
-    days_payable_outstanding = models.IntegerField()
-
-    collateral_level = models.CharField(max_length=20)
-    owner_education = models.CharField(max_length=50)
-
-    mobile_money_volume_kes = models.DecimalField(max_digits=15, decimal_places=2,
-                                                  null=True, blank=True)
-    utility_payment_consistency = models.CharField(max_length=20, null=True, blank=True)
-    savings_rate_pct = models.DecimalField(max_digits=5, decimal_places=2,
-                                           null=True, blank=True)
-    psychometric_score = models.IntegerField(null=True, blank=True)
-    has_formal_credit_history = models.BooleanField(default=False)
-    digital_footprint_score = models.IntegerField(null=True, blank=True)
-
+    late_payment_history = models.CharField(max_length=20, default="Never") # Never, Rarely, Sometimes, Often
+    collateral_level = models.CharField(max_length=20, default="Moderate") # Low, Moderate, High
+    repayment_confidence = models.IntegerField(default=4) # 1 to 5
+    owner_education = models.CharField(max_length=50, default="Secondary")
+    
+    # Business demographics (Can be captured here or read from linked Business model)
+    business_name = models.CharField(max_length=255, blank=True)
+    county = models.CharField(max_length=100, default="Nairobi")
+    sector = models.CharField(max_length=50, default="Retail")
+    legal_status = models.CharField(max_length=50, default="Sole")
+    location_type = models.CharField(max_length=50, default="Urban")
+    business_age_years = models.IntegerField(default=3)
+    employees_count = models.IntegerField(default=3)
+    
+    # Scoring & Explainability outputs (Saved after XGBoost + SHAP run)
+    credit_score = models.IntegerField(null=True, blank=True)
+    probability_of_default = models.FloatField(null=True, blank=True)
+    risk_tier = models.CharField(max_length=30, blank=True) # Low, Moderate, High
+    recommended_limit = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    shap_explanations = models.JSONField(default=list, blank=True) # Stores top SHAP explanation strings
+    
     submitted_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        db_table = "scoring_creditrequest"
+        ordering = ["-submitted_at"]
+
     def __str__(self):
-        return f"Request #{self.id} — {self.business.business_name}"
+        return f"{self.business_name or 'Request'} - Score: {self.credit_score} ({self.risk_tier})"
 
 
 class CreditAssessment(models.Model):
