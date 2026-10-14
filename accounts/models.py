@@ -16,6 +16,7 @@ class User(AbstractUser):
     national_id = models.CharField(max_length=20, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     county = models.CharField(max_length=50, blank=True, null=True)
+    #business = models.ForeignKey("businesses.BusinessProfile", on_delete=models.CASCADE, null=True, blank=True)
 
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="owner")
     status = models.CharField(
