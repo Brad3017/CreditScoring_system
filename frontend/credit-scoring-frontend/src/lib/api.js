@@ -68,3 +68,11 @@ export function getRole() {
 export function getToken() {
   return localStorage.getItem("access");
 }
+
+export async function fetchMe() {
+  const res = await fetch(`${BASE}/auth/me/`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error("Unauthorized");
+  return res.json();
+}
