@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
-import AnalystDashboard from './pages/analyst_dashboard';
+import AnalystDashboard from './pages/AnalystDashboard';
 import { getToken } from "./lib/api";
 
 function Private({ children }) {
@@ -17,6 +17,7 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/analyst-dashboard" element={<AnalystDashboard />} />
+        
         <Route
           path="/home"
           element={

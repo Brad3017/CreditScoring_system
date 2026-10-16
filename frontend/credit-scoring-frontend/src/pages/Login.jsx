@@ -25,6 +25,13 @@ export default function Login() {
     } finally {
       setBusy(false);
     }
+    if (data.role === "analyst") {
+      navigate("/analyst");
+    } else if (data.role === "admin") {
+      navigate("/admin");   // if you build admin later
+    } else {
+      navigate("/home");    // owner
+    }
   }
 
   return (
@@ -38,7 +45,7 @@ export default function Login() {
           name="email"
           value={form.email}
           onChange={change}
-          placeholder="you@example.com"
+          placeholder="Enter your email"
           required
         />
 

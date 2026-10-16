@@ -4,6 +4,21 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
 
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Adds `role` and user info to the JWT login response."""
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+        data["role"] = user.role
+        data["user"] = {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role,
+        }
+        return data
+
 
 class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
