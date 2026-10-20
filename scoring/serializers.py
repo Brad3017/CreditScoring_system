@@ -27,9 +27,8 @@ class CreditRequestSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
-class CreditAssessmentSerializer(serializers.ModelSerializer):
-    request_details = CreditRequestSerializer(source="request", read_only=True)
-
+class CreditRequestSerializer(serializers.ModelSerializer):
     class Meta:
-        model = CreditAssessment
+        model = CreditRequest
         fields = "__all__"
+        read_only_fields = ["id", "user", "submitted_at"]
