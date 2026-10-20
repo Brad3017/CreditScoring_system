@@ -38,3 +38,60 @@ def evaluate_credit_request(credit_req):
     """
     if xgb_model is None or tree_explainer is None:
         raise ValueError("ML model artifacts are not loaded. Check ml_artifacts/ folder.")    
+# A. Map attributes from the credit_req database instance
+    raw_input = {
+        "sector": credit_req.sector,
+        "business_age_years": credit_req.business_age_years,
+        "legal_status": credit_req.legal_status,
+        "location_type": credit_req.location_type,
+        "employees_count": credit_req.employees_count,
+        "existing_loans": 1 if credit_req.existing_loans else 0,
+        "prior_loan_count": credit_req.prior_loan_count,
+        "late_payment_history": credit_req.late_payment_history,
+        "collateral_level": credit_req.collateral_level,
+        "cashflow_stability": credit_req.cashflow_stability,
+        "repayment_confidence": credit_req.repayment_confidence,
+        "owner_education": credit_req.owner_education,
+        "days_payable_outstanding": credit_req.days_payable_outstanding,
+        "monthly_revenue_kes": float(credit_req.monthly_revenue_kes),
+        "monthly_profit_kes": float(credit_req.monthly_profit_kes),
+        "county": credit_req.county,
+    }
+
+    df = pd.DataFrame([raw_input])
+
+    # B. Map ordinal features
+    for col, mapping in METADATA.get("ordinal_mappings", {}).items():
+        if col in df.columns:
+            df[col] = df[col].map(mapping)
+
+    # C. Group unseen counties into 'Other'
+    valid_counties = METADATA.get("county_categories", [])
+    if valid_counties and "county" in df.columns:
+        df["county"] = df["county"].where(df["county"].isin(valid_counties), "Other")
+
+    # D. Enforce categorical dtypes expected by XGBoost
+    for col in METADATA.get("categorical_columns", []):
+        if col in df.columns:
+            df[col] = df[col].astype("category")
+
+    # E. Order columns strictly as trained
+    ordered_df = df[METADATA["features"]]
+
+    # F. Run Inference
+    prob_default = float(xgb_model.predict_proba(ordered_df)[0, 1])
+    credit_score = int(np.clip(850 - (prob_default * 550), 300, 850))
+
+    if prob_default < 0.25:
+        risk_category = "Low Risk"
+    elif prob_default < 0.40:
+        risk_category = "Moderate Risk"
+    else:
+        risk_category = "High Risk"
+
+    # Capacity limit: 40% annualized net monthly profit buffer
+    recommended_limit = (
+        round(float(credit_req.monthly_profit_kes) * 0.4 * 12, 2)
+        if risk_category != "High Risk"
+        else 0.0
+    )        
