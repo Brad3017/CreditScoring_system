@@ -1,0 +1,119 @@
+{
+    "model_name": "Tuned_XGBoost_MSME_Credit_Scorer",
+    "target": "target_missed_payment",
+    "threshold": 0.5,
+    "features": [
+        "sector",
+        "business_age_years",
+        "legal_status",
+        "location_type",
+        "employees_count",
+        "existing_loans",
+        "prior_loan_count",
+        "late_payment_history",
+        "collateral_level",
+        "cashflow_stability",
+        "repayment_confidence",
+        "owner_education",
+        "days_payable_outstanding",
+        "monthly_revenue_kes",
+        "monthly_profit_kes",
+        "county",
+        "profit_margin",
+        "stability_confidence_ratio"
+    ],
+    "categorical_columns": [
+        "sector",
+        "legal_status",
+        "location_type",
+        "county"
+    ],
+    "county_categories": [
+        "Baringo",
+        "Bomet",
+        "Bungoma",
+        "Busia",
+        "Elgeyo Marakwet",
+        "Embu",
+        "Garissa",
+        "Homa Bay",
+        "Isiolo",
+        "Kajiado",
+        "Kakamega",
+        "Kericho",
+        "Kiambu",
+        "Kilifi",
+        "Kirinyaga",
+        "Kisii",
+        "Kisumu",
+        "Kitui",
+        "Kwale",
+        "Laikipia",
+        "Lamu",
+        "Machakos",
+        "Makueni",
+        "Mandera",
+        "Marsabit",
+        "Meru",
+        "Migori",
+        "Mombasa",
+        "Murang'a",
+        "Nairobi",
+        "Nakuru",
+        "Nandi",
+        "Narok",
+        "Nyamira",
+        "Nyandarua",
+        "Nyeri",
+        "Samburu",
+        "Siaya",
+        "Taita Taveta",
+        "Tana River",
+        "Tharaka Nithi",
+        "Trans Nzoia",
+        "Turkana",
+        "Uasin Gishu",
+        "Vihiga",
+        "Wajir",
+        "West Pokot"
+    ],
+    "sector_categories": [
+        "Agriculture",
+        "Manufacturing",
+        "Retail",
+        "Services"
+    ],
+    "legal_status_categories": [
+        "Limited",
+        "Partnership",
+        "Sole"
+    ],
+    "location_type_categories": [
+        "Rural",
+        "Urban"
+    ],
+    "ordinal_mappings": {
+        "collateral_level": {
+            "Low": 0,
+            "Moderate": 1,
+            "High": 2
+        },
+        "owner_education": {
+            "Primary": 0,
+            "Secondary": 1,
+            "Higher Secondary": 2,
+            "Bachelor's": 3,
+            "Master's": 4
+        },
+        "late_payment_history": {
+            "Never": 0,
+            "Rarely": 1,
+            "Sometimes": 2,
+            "Often": 3
+        },
+        "existing_loans": {
+            "No": 0,
+            "Yes": 1
+        }
+    }
+}

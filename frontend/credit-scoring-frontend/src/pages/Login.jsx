@@ -16,21 +16,25 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setBusy(true);
+  
     try {
       const data = await login(form);
+  
+      // Save tokens + role
       saveSession(data.access, data.refresh, data.role || "owner");
-      navigate("/home");
+  
+      // Route by role — ONE navigate() call per branch
+      if (data.role === "analyst") {
+        navigate("/analyst");
+      } else if (data.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/home");
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
-    }
-    if (data.role === "analyst") {
-      navigate("/analyst");
-    } else if (data.role === "admin") {
-      navigate("/admin");   // if you build admin later
-    } else {
-      navigate("/home");    // owner
     }
   }
 
