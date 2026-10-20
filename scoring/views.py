@@ -16,16 +16,28 @@ class IsAnalystOrAdmin(IsAuthenticated):
 
 
 class AssessmentListView(APIView):
-    """List all assessments for analyst review."""
-    permission_classes = [IsAnalystOrAdmin]
+   permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = CreditAssessment.objects.select_related(
-            "request", "request__business", "request__user"
-        ).order_by("-created_at")
-        serializer = CreditAssessmentSerializer(qs, many=True)
-        return Response(serializer.data)
+        assessments = CreditAssessment.objects.filter(
+            request__user=request.user
+        ).select_related("request").order_by("-created_at")
 
+        results = []
+        for a in assessments:
+            results.append({
+                "id": f"ASSESS-{a.id}",
+                "business_name": a.request.business_name,
+                "sector": a.request.sector,
+                "county": a.request.county,
+                "monthly_revenue": float(a.request.monthly_revenue_kes),
+                "credit_score": a.credit_score,
+                "risk_category": a.risk_category,
+                "recommended_limit": float(a.recommended_limit),
+                "explanation": a.shap_explanation,
+                "created_at": a.created_at.strftime("%b %d, %Y")
+            })
+        return Response(results, status=status.HTTP_200_OK)
 
 class AssessmentDetailView(APIView):
     """View a single assessment in full detail."""
@@ -86,4 +98,19 @@ class SubmitCreditAssessmentView(APIView):
             recommended_limit=results["recommended_limit"],
             shap_explanation=results["shap_explanation"],
             model_version="xgb_msme_v1"
-        )            
+        )  
+
+# 5. Return JSON payload matching Home.jsx state
+        return Response({
+            "id": f"ASSESS-{assessment.id}",
+            "business_name": credit_req.business_name,
+            "sector": credit_req.sector,
+            "county": credit_req.county,
+            "monthly_revenue": float(credit_req.monthly_revenue_kes),
+            "credit_score": assessment.credit_score,
+            "probability_of_default": float(assessment.probability_of_default),
+            "risk_category": assessment.risk_category,
+            "recommended_limit": float(assessment.recommended_limit),
+            "explanation": assessment.shap_explanation,
+            "created_at": assessment.created_at.strftime("%b %d, %Y")
+        }, status=status.HTTP_201_CREATED)                  
