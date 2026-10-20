@@ -94,4 +94,28 @@ def evaluate_credit_request(credit_req):
         round(float(credit_req.monthly_profit_kes) * 0.4 * 12, 2)
         if risk_category != "High Risk"
         else 0.0
-    )        
+    )     
+# G. Local SHAP Attribution
+    shap_values = tree_explainer(ordered_df)
+    shap_contributions = []
+    for feat_name, impact in zip(METADATA["features"], shap_values.values[0]):
+        shap_contributions.append((feat_name, float(impact)))
+
+    # Sort by absolute SHAP impact
+    shap_contributions.sort(key=lambda x: abs(x[1]), reverse=True)
+
+    explanations = []
+    for feat, imp in shap_contributions[:3]:
+        clean_name = feat.replace("_", " ").title()
+        if imp > 0:
+            explanations.append(f"Caution: {clean_name} elevated the assessed risk of missed payment.")
+        else:
+            explanations.append(f"Positive: Strong {clean_name} supported credit standing.")
+
+    return {
+        "credit_score": credit_score,
+        "probability_of_default": round(prob_default, 4),
+        "risk_category": risk_category,
+        "recommended_limit": recommended_limit,
+        "shap_explanation": explanations,
+    }       
