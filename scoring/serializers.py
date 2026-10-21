@@ -9,6 +9,7 @@ class BusinessProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = BusinessProfile
         fields = "__all__"
+        read_only_fields = ["id", "user", "created_at"]
 
 
 class ApplicantSerializer(serializers.ModelSerializer):
@@ -19,12 +20,10 @@ class ApplicantSerializer(serializers.ModelSerializer):
 
 
 class CreditRequestSerializer(serializers.ModelSerializer):
-    business = BusinessProfileSerializer(read_only=True)
-    applicant = ApplicantSerializer(source="user", read_only=True)
-
     class Meta:
         model = CreditRequest
         fields = "__all__"
+        read_only_fields = ["id", "user", "submitted_at"]
 
 
 class CreditRequestSerializer(serializers.ModelSerializer):
@@ -32,3 +31,12 @@ class CreditRequestSerializer(serializers.ModelSerializer):
         model = CreditRequest
         fields = "__all__"
         read_only_fields = ["id", "user", "submitted_at"]
+
+class CreditAssessmentSerializer(serializers.ModelSerializer):
+    # Optionally embed the full request details when viewing an assessment
+    request_details = CreditRequestSerializer(source="request", read_only=True)
+
+    class Meta:
+        model = CreditAssessment
+        fields = "__all__"
+        read_only_fields = ["id", "created_at"]        

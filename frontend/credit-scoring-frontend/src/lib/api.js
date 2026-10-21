@@ -24,7 +24,7 @@ export async function login(data) {
 
 export async function fetchMyAssessments() {
   const token = getToken();
-  const res = await fetch(`${BASE}/assessments/`, {
+  const res = await fetch(`${BASE}/scoring/assessments/`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
@@ -36,7 +36,7 @@ export async function fetchMyAssessments() {
 
 export async function submitAssessment(payload) {
   const token = getToken();
-  const res = await fetch(`${BASE}/assessments/`, {
+  const res = await fetch(`${BASE}/scoring/assess/`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -45,7 +45,7 @@ export async function submitAssessment(payload) {
     body: JSON.stringify(payload),
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.detail || "Assessment submission failed");
+  if (!res.ok) throw new Error(body.detail || body.error || "Assessment submission failed");
   return body;
 }
 
