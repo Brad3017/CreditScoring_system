@@ -36,6 +36,7 @@ export async function fetchMyAssessments() {
 
 export async function submitAssessment(payload) {
   const token = getToken();
+  // Ensure this path matches your working Django endpoint!
   const res = await fetch(`${BASE}/scoring/assess/`, {
     method: "POST",
     headers: {
@@ -44,8 +45,20 @@ export async function submitAssessment(payload) {
     },
     body: JSON.stringify(payload),
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.detail || body.error || "Assessment submission failed");
+
+  // Safe JSON parsing so it shows the real status code instead of crashing on HTML
+  const text = await res.text();
+  let body;
+  try {
+    body = JSON.parse(text);
+  } catch (err) {
+    console.error("Raw HTML error response from Django:", text);
+    throw new Error(`Server returned HTTP ${res.status} (${res.statusText}). Check Django terminal.`);
+  }
+
+  if (!res.ok) {
+    throw new Error(body.detail || body.error || JSON.stringify(body));
+  }
   return body;
 }
 

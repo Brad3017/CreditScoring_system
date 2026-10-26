@@ -1,11 +1,11 @@
-from rest_framework import status
-from rest_framework.response import Response
+from rest_framework import status, generics
 from rest_framework.views import APIView
+from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import CreditAssessment
-from .serializers import CreditAssessmentSerializer
-
+from .models import CreditRequest, CreditAssessment, BusinessProfile
+from .serializers import CreditRequestSerializer, CreditAssessmentSerializer
+from .services import evaluate_credit_request
 
 class IsAnalystOrAdmin(IsAuthenticated):
     """Only analysts and admins can access the review queue."""
