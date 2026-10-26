@@ -18,9 +18,8 @@
         "days_payable_outstanding",
         "monthly_revenue_kes",
         "monthly_profit_kes",
-        "county",
-        "profit_margin",
-        "stability_confidence_ratio"
+        "county"
+    
     ],
     "categorical_columns": [
         "sector",
