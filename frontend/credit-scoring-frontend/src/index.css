@@ -1,5 +1,5 @@
 
-/* Your existing CSS code for other pages stays right below here! */
+@import "tailwindcss";
 
 /* ✅ Correct */
 *, *::before, *::after {

@@ -81,7 +81,7 @@ export default function AssessmentResultPage() {
             <p className="text-xs text-slate-500 mb-4">Key business indicators that determined your current score and borrowing capacity:</p>
             
             <div className="space-y-2.5">
-              {assessment.shap_explanation?.map((exp, index) => {
+              {assessment.explanation?.map((exp, index) => {
                 const isPositive = exp.startsWith("Positive");
                 return (
                   <div 

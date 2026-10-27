@@ -10,17 +10,8 @@ import {
 } from "../lib/api";
 
 export default function Home() {
-const navigate = useNavigate();
-const handleSubmit = async (formData) => {
-  try {
-    const result = await submitAssessment(formData); // Your API call
-    
-    // Navigate to the separate results page and pass the result data
-    navigate('/assessment/results', { state: { assessment: result } });
-  } catch (err) {
-    console.error("Assessment failed:", err);
-  }
-};
+  const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState("dashboard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -28,8 +19,11 @@ const handleSubmit = async (formData) => {
   // Logged-in user (fetched from /api/auth/me/)
   const [user, setUser] = useState(null);
 
-  // Latest calculated assessment
+  // Latest calculated assessment for dashboard overview
   const [latestAssessment, setLatestAssessment] = useState(null);
+  
+  // Full assessment history array for the table
+  const [assessmentsList, setAssessmentsList] = useState([]);
 
   // Form state aligning 1:1 with Tuned XGBoost Model Features
   const [form, setForm] = useState({
@@ -76,7 +70,8 @@ const handleSubmit = async (formData) => {
     try {
       const data = await fetchMyAssessments();
       if (Array.isArray(data) && data.length > 0) {
-        setLatestAssessment(data[0]);
+        setAssessmentsList(data);     // Save the full list for the history table
+        setLatestAssessment(data[0]); // Keep the newest one for the dashboard
       }
     } catch (e) {
       console.log("No previous assessments found:", e.message);
@@ -109,9 +104,10 @@ const handleSubmit = async (formData) => {
     try {
       const result = await submitAssessment(form);
       setLatestAssessment(result);
-      setActiveTab("dashboard");
+      
+      // Navigate to the separate results page and pass the result data
+      navigate('/assessment/results', { state: { assessment: result } });
     } catch (err) {
-      // No fallback — show the real error so we know the backend needs fixing
       setError(
         `Assessment failed: ${err.message}. Please try again or contact support.`
       );
@@ -304,13 +300,9 @@ const handleSubmit = async (formData) => {
                     <div style={{ marginTop: "1.25rem" }}>
                       <button
                         className="action-btn"
-                        onClick={() =>
-                          alert(
-                            "Assessment report generated. You can submit this to your lending institution."
-                          )
-                        }
+                        onClick={() => navigate('/assessment/results', { state: { assessment: latestAssessment } })}
                       >
-                        Download Verified Assessment Report
+                        View Verified Assessment Report
                       </button>
                     </div>
                   </div>
@@ -635,39 +627,45 @@ const handleSubmit = async (formData) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {latestAssessment ? (
-                    <tr>
-                      <td>{latestAssessment.id || "ASSESS-1092"}</td>
-                      <td>
-                        {latestAssessment.business_name ||
-                          form.business_name ||
-                          "Baraka Hardware"}
-                      </td>
-                      <td>
-                        KES{" "}
-                        {Number(
-                          latestAssessment.monthly_revenue ||
-                            form.monthly_revenue_kes
-                        ).toLocaleString()}
-                      </td>
-                      <td>
-                        <strong>{latestAssessment.credit_score}</strong>
-                      </td>
-                      <td>
-                        <span
-                          className={`tag-${
-                            latestAssessment.risk_category
-                              .toLowerCase()
-                              .includes("low")
-                              ? "low"
-                              : "moderate"
-                          }`}
-                        >
-                          {latestAssessment.risk_category}
-                        </span>
-                      </td>
-                      <td>{latestAssessment.created_at || "Recent"}</td>
-                    </tr>
+                  {assessmentsList.length > 0 ? (
+                    assessmentsList.map((assessment, index) => (
+                      <tr key={assessment.id || index}>
+                        <td>{assessment.id || `ASSESS-${1000 + index}`}</td>
+                        <td>
+                          {assessment.business_name ||
+                            form.business_name ||
+                            "Baraka Hardware"}
+                        </td>
+                        <td>
+                          KES{" "}
+                          {Number(
+                            assessment.monthly_revenue ||
+                              form.monthly_revenue_kes
+                          ).toLocaleString()}
+                        </td>
+                        <td>
+                          <strong>{assessment.credit_score}</strong>
+                        </td>
+                        <td>
+                          <span
+                            className={`tag-${
+                              assessment.risk_category
+                                .toLowerCase()
+                                .includes("low")
+                                ? "low"
+                                : "moderate"
+                            }`}
+                          >
+                            {assessment.risk_category}
+                          </span>
+                        </td>
+                        <td>
+                          {assessment.created_at
+                            ? new Date(assessment.created_at).toLocaleDateString()
+                            : "Recent"}
+                        </td>
+                      </tr>
+                    ))
                   ) : (
                     <tr>
                       <td colSpan="6" style={{ textAlign: "center" }}>
@@ -686,7 +684,7 @@ const handleSubmit = async (formData) => {
 }
 
 /* ──────────────────────────────────────────────── */
-/* Profile Completion Panel                        */
+/* Profile Completion Panel                         */
 /* ──────────────────────────────────────────────── */
 function ProfileCompletionPanel({ user, onSaved }) {
   const [form, setForm] = useState({

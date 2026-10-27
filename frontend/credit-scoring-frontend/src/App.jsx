@@ -17,16 +17,17 @@ export default function App() {
         <Route path="/" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/assessment/results" element={<AssessmentResultPage />} />
         <Route path="/analyst" element={<AnalystDashboard />} />
-
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/assessment/results" element={<AssessmentResultPage />} />
-      </Routes>
-    </BrowserRouter>
-  
+        
+        {/* Your new Assessment Results Page (Protected) */}
+        <Route 
+          path="/assessment/results" 
+          element={
+            <Private>
+              <AssessmentResultPage />
+            </Private>
+          } 
+        />
         
         <Route
           path="/home"
