@@ -10,7 +10,17 @@ import {
 } from "../lib/api";
 
 export default function Home() {
-  const navigate = useNavigate();
+const navigate = useNavigate();
+const handleSubmit = async (formData) => {
+  try {
+    const result = await submitAssessment(formData); // Your API call
+    
+    // Navigate to the separate results page and pass the result data
+    navigate('/assessment/results', { state: { assessment: result } });
+  } catch (err) {
+    console.error("Assessment failed:", err);
+  }
+};
   const [activeTab, setActiveTab] = useState("dashboard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
