@@ -23,14 +23,15 @@ export async function login(data) {
 }
 
 export async function fetchMyAssessments() {
-  const token = getToken();
-  const res = await fetch(`${BASE}/scoring/assessments/`, {
+  const res = await fetch("http://127.0.0.1:8000/api/scoring/assessments/", {
     headers: {
+      Authorization: `Bearer ${getToken()}`,
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    throw new Error("Failed to fetch assessments");
+  }
   return res.json();
 }
 

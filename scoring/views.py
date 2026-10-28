@@ -18,7 +18,7 @@ class IsAnalystOrAdmin(IsAuthenticated):
 class AssessmentListView(APIView):
    permission_classes = [IsAuthenticated]
 
-def get(self, request):
+    def get(self, request):
         assessments = CreditAssessment.objects.filter(
             request__user=request.user
         ).select_related("request").order_by("-created_at")
