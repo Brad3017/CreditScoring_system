@@ -21,6 +21,7 @@ export default function Home() {
 
   // Latest calculated assessment for dashboard overview
   const [latestAssessment, setLatestAssessment] = useState(null);
+  const [allAssessments, setAllAssessments] = useState([]); // 👈 Add this
   
   // Full assessment history array for the table
   const [assessmentsList, setAssessmentsList] = useState([]);
@@ -69,9 +70,11 @@ export default function Home() {
   async function loadAssessments() {
     try {
       const data = await fetchMyAssessments();
-      if (Array.isArray(data) && data.length > 0) {
-        setAssessmentsList(data);     // Save the full list for the history table
-        setLatestAssessment(data[0]); // Keep the newest one for the dashboard
+      if (Array.isArray(data)) {
+        setAllAssessments(data); // 👈 Save all for the History tab
+        if (data.length > 0) {
+          setLatestAssessment(data[0]); // 👈 Save the newest for the Dashboard tab
+        }
       }
     } catch (e) {
       console.log("No previous assessments found:", e.message);
@@ -627,41 +630,36 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {assessmentsList.length > 0 ? (
-                    assessmentsList.map((assessment, index) => (
-                      <tr key={assessment.id || index}>
-                        <td>{assessment.id || `ASSESS-${1000 + index}`}</td>
+                  {allAssessments.length > 0 ? (
+                    allAssessments.map((item) => (
+                      <tr key={item.assessment_id}>
+                        <td>#{item.assessment_id}</td>
                         <td>
-                          {assessment.business_name ||
-                            form.business_name ||
-                            "Baraka Hardware"}
+                        {item.request_details?.business?.business_name || "—"}
                         </td>
                         <td>
                           KES{" "}
                           {Number(
-                            assessment.monthly_revenue ||
-                              form.monthly_revenue_kes
+                             item.request_details?.monthly_profit_kes || 0
                           ).toLocaleString()}
                         </td>
                         <td>
-                          <strong>{assessment.credit_score}</strong>
+                          <strong>{item.credit_score}</strong>
                         </td>
                         <td>
                           <span
                             className={`tag-${
-                              assessment.risk_category
-                                .toLowerCase()
-                                .includes("low")
+                              (item.risk_category || "").toLowerCase().includes("low")
                                 ? "low"
                                 : "moderate"
                             }`}
                           >
-                            {assessment.risk_category}
+                            {item.risk_category || Unknown}
                           </span>
                         </td>
                         <td>
                           {assessment.created_at
-                            ? new Date(assessment.created_at).toLocaleDateString()
+                            ? new Date(item.created_at).toLocaleDateString()
                             : "Recent"}
                         </td>
                       </tr>
