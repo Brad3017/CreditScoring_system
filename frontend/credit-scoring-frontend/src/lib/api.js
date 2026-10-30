@@ -23,11 +23,14 @@ export async function login(data) {
 }
 
 export async function fetchMyAssessments() {
-  
-  const res = await fetch(`${BASE}/assessments/my/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const token = getToken();
+  const res = await fetch(`${BASE}/scoring/assessments/`, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
   });
-  if (!res.ok) throw new Error("Failed to load assessments");
+  if (!res.ok) return [];
   return res.json();
 }
 

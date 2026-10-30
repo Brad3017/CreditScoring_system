@@ -18,7 +18,7 @@ class IsAnalystOrAdmin(IsAuthenticated):
 class AssessmentListView(APIView):
    permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+def get(self, request):
         assessments = CreditAssessment.objects.filter(
             request__user=request.user
         ).select_related("request").order_by("-created_at")
@@ -114,17 +114,3 @@ class SubmitCreditAssessmentView(APIView):
             "explanation": assessment.shap_explanation,
             "created_at": assessment.created_at.strftime("%b %d, %Y")
         }, status=status.HTTP_201_CREATED)                  
-
-
-class MyAssessmentsView(APIView):
-    """Returns all assessments belonging ONLY to the logged-in user."""
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        # Filter by the current user
-        assessments = CreditAssessment.objects.filter(
-            request__user=request.user
-        ).order_by("-created_at")
-        
-        serializer = CreditAssessmentSerializer(assessments, many=True)
-        return Response(serializer.data)
