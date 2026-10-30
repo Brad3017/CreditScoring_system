@@ -20,22 +20,35 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/analyst" element={<AnalystDashboard />} />
-        
-        {/* Your new Assessment Results Page (Protected) */}
-        <Route 
-          path="/assessment/results" 
-          element={
-            <Private>
-              <AssessmentResultPage />
-            </Private>
-          } 
-        />
-        
         <Route
           path="/home"
           element={
             <Private>
               <Home />
+            </Private>
+          }
+        />
+        <Route
+          path="/assessment/new"
+          element={
+            <Private>
+              <NewAssessment />
+            </Private>
+          }
+        />
+        <Route
+          path="/analytics"
+          element={
+            <Private>
+              <Analytics />
+            </Private>
+          }
+        />
+        <Route
+          path="/assessment/results"
+          element={
+            <Private>
+              <AssessmentResultPage />
             </Private>
           }
         />

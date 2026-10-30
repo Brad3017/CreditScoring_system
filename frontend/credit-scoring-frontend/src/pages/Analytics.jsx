@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   clearSession,
-  getToken,
   fetchMe,
   fetchMyAssessments,
 } from "../lib/api";
@@ -16,13 +15,10 @@ import {
   Bell,
   Download,
   Calendar,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   ShieldCheck,
   CheckCircle2,
-  ChevronRight,
-  Info
+  TrendingDown,
+  Plus
 } from "lucide-react";
 
 export default function Analytics() {
@@ -60,19 +56,38 @@ export default function Analytics() {
         .toUpperCase()
     : "ME";
 
+  // Data processing from dynamic assessments
+  const totalAssessments = assessments.length;
   const latest = assessments[0] || null;
 
-  // Aggregate metrics
-  const totalAssessments = assessments.length || 1;
+  // Calculate actual revenue average across assessments
+  const avgRevenue =
+    totalAssessments > 0
+      ? Math.round(
+          assessments.reduce(
+            (acc, curr) => acc + (Number(curr.monthly_revenue) || 0),
+            0
+          ) / totalAssessments
+        )
+      : 0;
+
+  // Breakdown of risk tiers
   const lowRiskCount = assessments.filter((a) =>
     a.risk_category?.toLowerCase().includes("low")
-  ).length || 1;
+  ).length;
   const mediumRiskCount = assessments.filter((a) =>
     a.risk_category?.toLowerCase().includes("moderate")
-  ).length || 0;
+  ).length;
   const highRiskCount = assessments.filter((a) =>
     a.risk_category?.toLowerCase().includes("high")
-  ).length || 0;
+  ).length;
+
+  const lowRiskPercent = totalAssessments > 0 ? (lowRiskCount / totalAssessments) * 100 : 0;
+  const circumference = 2 * Math.PI * 42; // r=42 -> ~264
+  const strokeOffset = circumference - (lowRiskPercent / 100) * circumference;
+
+  // Chronological order for trend line charts (oldest to newest)
+  const chronological = [...assessments].reverse();
 
   return (
     <div className="flex h-screen bg-[#F4F6FA] font-sans antialiased text-slate-800 overflow-hidden">
@@ -175,16 +190,18 @@ export default function Analytics() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white shadow-sm">
               <Calendar size={14} className="text-slate-400" />
-              Last 6 months
+              Historical Records
             </div>
 
-            <button
-              onClick={() => alert("Report generation started.")}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-semibold shadow-sm transition-all"
-            >
-              <Download size={14} />
-              Download Report
-            </button>
+            {totalAssessments > 0 && (
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-semibold shadow-sm transition-all"
+              >
+                <Download size={14} />
+                Download Report
+              </button>
+            )}
 
             <button className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 relative ml-2">
               <Bell size={16} />
@@ -193,261 +210,258 @@ export default function Analytics() {
         </header>
 
         <main className="p-8 max-w-7xl w-full mx-auto space-y-6">
-          {/* TOP METRIC CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-400 block mb-1">
-                Average Monthly Revenue
-              </span>
-              <p className="text-lg font-bold text-slate-900">
-                KES {Number(latest?.monthly_revenue || 450000).toLocaleString()}
-              </p>
-              <span className="text-[11px] text-emerald-600 flex items-center gap-1 font-semibold mt-1">
-                <TrendingUp size={12} /> +12% vs. previous 6 months
-              </span>
+          {loading ? (
+            <div className="min-h-[400px] flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
             </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-400 block mb-1">
-                Estimated Net Margin
-              </span>
-              <p className="text-lg font-bold text-slate-900">KES 95,000</p>
-              <span className="text-[11px] text-emerald-600 flex items-center gap-1 font-semibold mt-1">
-                <TrendingUp size={12} /> +8% vs. previous period
-              </span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-400 block mb-1">
-                Max Recommended Facility
-              </span>
-              <p className="text-lg font-bold text-slate-900">
-                KES {Number(latest?.recommended_limit || 500000).toLocaleString()}
-              </p>
-              <span className="text-[11px] text-emerald-600 flex items-center gap-1 font-semibold mt-1">
-                <TrendingUp size={12} /> Prudent limit verified
-              </span>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
-              <span className="text-[11px] font-medium text-slate-400 block mb-1">
-                Latest Credit Score
-              </span>
-              <div className="flex items-baseline gap-2">
-                <p className="text-lg font-bold text-slate-900">
-                  {latest?.credit_score || 742}
-                </p>
-                <span className="text-xs text-slate-400 font-semibold">/ 850</span>
+          ) : totalAssessments === 0 ? (
+            /* ───────────────────────────────────────────────────────────── */
+            /* FIRST-TIME USER VIEW: No Analytics Available Yet              */
+            /* ───────────────────────────────────────────────────────────── */
+            <div className="max-w-2xl mx-auto my-12 bg-white rounded-3xl p-10 border border-slate-200/80 shadow-sm text-center">
+              <div className="h-16 w-16 bg-slate-100 text-slate-900 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                <BarChart3 size={32} />
               </div>
-              <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">
-                ● {latest?.risk_category || "Low Risk"}
-              </span>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">
+                No Analytics Data Available
+              </h2>
+              <p className="text-sm text-slate-500 leading-relaxed mb-6 max-w-md mx-auto">
+                Analytics and credit score trend charts will become visible once you
+                have submitted your first business credit assessment.
+              </p>
+              <button
+                onClick={() => navigate("/assessment/new")}
+                className="bg-black hover:bg-slate-800 text-white font-semibold text-sm px-6 py-3 rounded-xl shadow-sm inline-flex items-center gap-2 transition-all"
+              >
+                <Plus size={16} />
+                Run Initial Assessment
+              </button>
             </div>
-          </div>
-
-          {/* TWO MAIN SVG CHARTS */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Financial Performance Over Time */}
-            <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-                  <BarChart3 size={16} />
-                  Financial Performance Over Time
-                </div>
-                <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500"></span> Revenue
+          ) : (
+            /* ───────────────────────────────────────────────────────────── */
+            /* RETURNING USER VIEW: Dynamic Real Data Analytics              */
+            /* ───────────────────────────────────────────────────────────── */
+            <>
+              {/* TOP METRIC CARDS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Average Monthly Revenue
                   </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full bg-slate-900"></span> Expenses
+                  <p className="text-lg font-bold text-slate-900">
+                    KES {avgRevenue.toLocaleString()}
+                  </p>
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    Across {totalAssessments} evaluation{totalAssessments > 1 ? "s" : ""}
                   </span>
                 </div>
-              </div>
 
-              {/* Responsive SVG Line Chart */}
-              <div className="pt-6">
-                <svg viewBox="0 0 500 180" className="w-full h-44 overflow-visible">
-                  {/* Grid Lines */}
-                  <line x1="40" y1="20" x2="490" y2="20" stroke="#F1F5F9" strokeWidth="1" />
-                  <line x1="40" y1="60" x2="490" y2="60" stroke="#F1F5F9" strokeWidth="1" />
-                  <line x1="40" y1="100" x2="490" y2="100" stroke="#F1F5F9" strokeWidth="1" />
-                  <line x1="40" y1="140" x2="490" y2="140" stroke="#F1F5F9" strokeWidth="1" />
-
-                  {/* Y Axis Values */}
-                  <text x="30" y="24" textAnchor="end" fontSize="9" fill="#94A3B8">300k</text>
-                  <text x="30" y="64" textAnchor="end" fontSize="9" fill="#94A3B8">200k</text>
-                  <text x="30" y="104" textAnchor="end" fontSize="9" fill="#94A3B8">100k</text>
-                  <text x="30" y="144" textAnchor="end" fontSize="9" fill="#94A3B8">0</text>
-
-                  {/* Revenue Curve (Green) */}
-                  <path
-                    d="M 60 110 C 120 90, 180 80, 240 50 C 300 35, 380 40, 470 45"
-                    fill="none"
-                    stroke="#10B981"
-                    strokeWidth="2.5"
-                  />
-                  {/* Expense Curve (Black) */}
-                  <path
-                    d="M 60 125 C 120 115, 180 110, 240 85 C 300 75, 380 80, 470 90"
-                    fill="none"
-                    stroke="#0F172A"
-                    strokeWidth="2.5"
-                  />
-
-                  {/* Month Points */}
-                  {[
-                    { x: 60, m: "May" },
-                    { x: 140, m: "Jun" },
-                    { x: 220, m: "Jul" },
-                    { x: 300, m: "Aug" },
-                    { x: 380, m: "Sep" },
-                    { x: 470, m: "Oct" },
-                  ].map((p, i) => (
-                    <text key={i} x={p.x} y="165" textAnchor="middle" fontSize="10" fill="#64748B" fontWeight="600">
-                      {p.m}
-                    </text>
-                  ))}
-                </svg>
-              </div>
-            </div>
-
-            {/* Credit Score History */}
-            <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-                  <ShieldCheck size={16} />
-                  Credit Score History
-                </div>
-                <span className="text-[11px] font-semibold text-slate-400">Scale: 300 – 850</span>
-              </div>
-
-              <div className="pt-6">
-                <svg viewBox="0 0 350 180" className="w-full h-44 overflow-visible">
-                  <line x1="30" y1="30" x2="330" y2="30" stroke="#F1F5F9" strokeWidth="1" />
-                  <line x1="30" y1="80" x2="330" y2="80" stroke="#F1F5F9" strokeWidth="1" />
-                  <line x1="30" y1="130" x2="330" y2="130" stroke="#F1F5F9" strokeWidth="1" />
-
-                  <path
-                    d="M 60 110 L 180 80 L 300 45"
-                    fill="none"
-                    stroke="#000000"
-                    strokeWidth="2.5"
-                  />
-
-                  {/* Nodes */}
-                  {[
-                    { x: 60, y: 110, score: "640", date: "Aug 2026" },
-                    { x: 180, y: 80, score: "680", date: "Sep 2026" },
-                    { x: 300, y: 45, score: `${latest?.credit_score || 742}`, date: "Oct 2026" },
-                  ].map((pt, i) => (
-                    <g key={i}>
-                      <circle cx={pt.x} cy={pt.y} r="5" fill="#000000" />
-                      <circle cx={pt.x} cy={pt.y} r="2" fill="#FFFFFF" />
-                      <text x={pt.x} y={pt.y - 10} textAnchor="middle" fontSize="10" fontWeight="bold" fill="#0F172A">
-                        {pt.score}
-                      </text>
-                      <text x={pt.x} y="165" textAnchor="middle" fontSize="9" fill="#94A3B8" fontWeight="600">
-                        {pt.date}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          {/* LOWER ROW: RISK DONUT, FINANCIAL INDICATORS, AND RECURRING FACTORS */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Risk Distribution Donut */}
-            <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-              <h3 className="text-sm font-bold text-slate-900 mb-4">
-                Risk Assessment History
-              </h3>
-
-              <div className="flex items-center justify-around my-2">
-                <div className="relative flex items-center justify-center">
-                  <svg className="w-28 h-28 transform -rotate-90">
-                    <circle cx="56" cy="56" r="42" stroke="#F1F5F9" strokeWidth="10" fill="none" />
-                    <circle
-                      cx="56"
-                      cy="56"
-                      r="42"
-                      stroke="#10B981"
-                      strokeWidth="10"
-                      strokeDasharray="264"
-                      strokeDashoffset="70"
-                      strokeLinecap="round"
-                      fill="none"
-                    />
-                  </svg>
-                  <div className="absolute text-center">
-                    <span className="text-xl font-extrabold text-slate-900 block leading-tight">
-                      {totalAssessments}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-semibold uppercase">Total</span>
-                  </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Latest Revenue Recorded
+                  </span>
+                  <p className="text-lg font-bold text-slate-900">
+                    KES {Number(latest?.monthly_revenue || 0).toLocaleString()}
+                  </p>
+                  <span className="text-[11px] text-slate-500 mt-1 block">
+                    County: {latest?.county || "Kenya"}
+                  </span>
                 </div>
 
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-                    <span className="text-slate-600">Low Risk:</span>
-                    <strong className="text-slate-900">{lowRiskCount}</strong>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Max Recommended Facility
+                  </span>
+                  <p className="text-lg font-bold text-slate-900">
+                    KES {Number(latest?.recommended_limit || 0).toLocaleString()}
+                  </p>
+                  <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">
+                    Prudent limit capacity
+                  </span>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-1">
+                    Latest Credit Score
+                  </span>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-lg font-bold text-slate-900">
+                      {latest?.credit_score}
+                    </p>
+                    <span className="text-xs text-slate-400 font-semibold">/ 850</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-amber-400"></span>
-                    <span className="text-slate-600">Medium Risk:</span>
-                    <strong className="text-slate-900">{mediumRiskCount}</strong>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-rose-500"></span>
-                    <span className="text-slate-600">High Risk:</span>
-                    <strong className="text-slate-900">{highRiskCount}</strong>
-                  </div>
+                  <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">
+                    ● {latest?.risk_category}
+                  </span>
                 </div>
               </div>
 
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[11px] text-emerald-800 flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                <span>Your business has maintained low-risk status over consecutive evaluations.</span>
-              </div>
-            </div>
-
-            {/* Recurring Assessment Factors (SHAP Weights) */}
-            <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-900">
-                  Recurring Assessment Factors (SHAP Values)
-                </h3>
-                <span className="text-xs text-slate-400 font-medium">Model v1 Contribution</span>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                {[
-                  { name: "Cash flow stability", weight: "-0.28", positive: true, pct: "75%" },
-                  { name: "Repayment history record", weight: "-0.21", positive: true, pct: "65%" },
-                  { name: "Existing debt ratio", weight: "+0.17", positive: false, pct: "50%" },
-                  { name: "Weekly sales predictability", weight: "-0.12", positive: true, pct: "40%" },
-                ].map((f, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-3 items-center text-xs">
-                    <span className="col-span-4 font-semibold text-slate-700">{f.name}</span>
-                    <div className="col-span-5 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${f.positive ? "bg-emerald-500" : "bg-rose-500"}`}
-                        style={{ width: f.pct }}
-                      ></div>
-                    </div>
-                    <div className="col-span-3 text-right">
-                      <span className="font-mono text-slate-400 font-semibold mr-2">{f.weight}</span>
-                      <span className={`font-semibold ${f.positive ? "text-emerald-600" : "text-rose-500"}`}>
-                        {f.positive ? "Reduces risk" : "Increases risk"}
-                      </span>
+              {/* DYNAMIC CHARTS */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Revenue Timeline */}
+                <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                      <BarChart3 size={16} />
+                      Reported Revenue Per Assessment
                     </div>
                   </div>
-                ))}
+
+                  <div className="pt-6">
+                    <div className="h-44 flex items-end gap-6 px-4 pb-2 border-b border-slate-100">
+                      {chronological.slice(-6).map((item, i) => {
+                        const maxRev = Math.max(...assessments.map(a => Number(a.monthly_revenue) || 1));
+                        const heightPct = Math.max(15, Math.round(((Number(item.monthly_revenue) || 0) / maxRev) * 100));
+                        return (
+                          <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                            <span className="text-[10px] font-mono text-slate-500 font-bold">
+                              {(Number(item.monthly_revenue) / 1000).toFixed(0)}k
+                            </span>
+                            <div
+                              className="w-full bg-emerald-500 rounded-t-lg transition-all duration-500"
+                              style={{ height: `${heightPct}%` }}
+                            ></div>
+                            <span className="text-[10px] text-slate-400 truncate max-w-[60px]">
+                              {item.created_at || `#${i + 1}`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Credit Score History */}
+                <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                      <ShieldCheck size={16} />
+                      Credit Score Trend
+                    </div>
+                    <span className="text-[11px] font-semibold text-slate-400">Scale: 300 – 850</span>
+                  </div>
+
+                  <div className="pt-6 space-y-3">
+                    {chronological.slice(-4).map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">{item.created_at || "Recent"}</p>
+                          <span className="text-[10px] text-slate-400">{item.id}</span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-extrabold text-slate-900">{item.credit_score}</p>
+                          <span className="text-[10px] font-semibold text-emerald-600">{item.risk_category}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+
+              {/* LOWER ROW: RISK DONUT & REAL SHAP EXPLANATION FACTORS */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Dynamic Risk Distribution Donut */}
+                <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                  <h3 className="text-sm font-bold text-slate-900 mb-4">
+                    Risk Assessment Distribution
+                  </h3>
+
+                  <div className="flex items-center justify-around my-2">
+                    <div className="relative flex items-center justify-center">
+                      <svg className="w-28 h-28 transform -rotate-90">
+                        <circle cx="56" cy="56" r="42" stroke="#F1F5F9" strokeWidth="10" fill="none" />
+                        <circle
+                          cx="56"
+                          cy="56"
+                          r="42"
+                          stroke="#10B981"
+                          strokeWidth="10"
+                          strokeDasharray={circumference}
+                          strokeDashoffset={strokeOffset}
+                          strokeLinecap="round"
+                          fill="none"
+                        />
+                      </svg>
+                      <div className="absolute text-center">
+                        <span className="text-xl font-extrabold text-slate-900 block leading-tight">
+                          {totalAssessments}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase">Total</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                        <span className="text-slate-600">Low Risk:</span>
+                        <strong className="text-slate-900">{lowRiskCount}</strong>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+                        <span className="text-slate-600">Medium Risk:</span>
+                        <strong className="text-slate-900">{mediumRiskCount}</strong>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+                        <span className="text-slate-600">High Risk:</span>
+                        <strong className="text-slate-900">{highRiskCount}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-[11px] text-slate-600 mt-4">
+                    Based on {totalAssessments} completed MSME credit assessment{totalAssessments > 1 ? "s" : ""}.
+                  </div>
+                </div>
+
+                {/* Actual SHAP Factors from Django ML Model */}
+                <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Latest Decision Factors (SHAP Explanations)
+                    </h3>
+                    <span className="text-xs text-slate-400 font-medium">Model v1 Contribution</span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {latest?.explanation && latest.explanation.length > 0 ? (
+                      latest.explanation.map((item, idx) => {
+                        const isPositive =
+                          item.toLowerCase().includes("positive") ||
+                          item.toLowerCase().includes("strong");
+                        return (
+                          <div
+                            key={idx}
+                            className="p-3 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs"
+                          >
+                            <span className="font-semibold text-slate-800">
+                              {item}
+                            </span>
+                            <span
+                              className={`text-[11px] font-semibold flex items-center gap-1 ${
+                                isPositive ? "text-emerald-600" : "text-rose-500"
+                              }`}
+                            >
+                              {isPositive ? (
+                                <CheckCircle2 size={13} />
+                              ) : (
+                                <TrendingDown size={13} />
+                              )}
+                              {isPositive ? "Reduces Risk" : "Increases Risk"}
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-slate-400 py-4">
+                        No feature explanation logs found for this assessment.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </main>
       </div>
     </div>
