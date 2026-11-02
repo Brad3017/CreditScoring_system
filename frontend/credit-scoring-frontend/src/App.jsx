@@ -10,6 +10,7 @@ import MyAssessments from "./pages/MyAssessments";
 import BusinessProfilePage from "./pages/BusinessProfilePage";
 import { getToken } from "./lib/api";
 
+
 function Private({ children }) {
   return getToken() ? children : <Navigate to="/login" replace />;
 }
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/analyst" element={<AnalystDashboard />} />
+       
         <Route
           path="/home"
           element={
