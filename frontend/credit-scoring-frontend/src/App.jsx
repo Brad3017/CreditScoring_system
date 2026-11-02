@@ -6,6 +6,8 @@ import NewAssessment from "./pages/NewAssessment";
 import Analytics from "./pages/Analytics";
 import AnalystDashboard from './pages/AnalystDashboard';
 import AssessmentResultPage from './pages/AssessmentResultPage';
+import MyAssessments from "./pages/MyAssessments";
+import BusinessProfilePage from "./pages/BusinessProfilePage";
 import { getToken } from "./lib/api";
 
 function Private({ children }) {
@@ -33,6 +35,23 @@ export default function App() {
           element={
             <Private>
               <NewAssessment />
+            </Private>
+          }
+        />
+        <Route
+          path="/assessments"
+          element={
+            <Private>
+              <MyAssessments />
+            </Private>
+          }
+        />
+
+        <Route
+          path="/profile"
+          element={
+            <Private>
+              <BusinessProfilePage />
             </Private>
           }
         />
