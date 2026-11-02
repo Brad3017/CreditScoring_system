@@ -91,10 +91,13 @@ export async function fetchMe() {
 }
 
 export async function fetchAllAssessments() {
-  const res = await fetch(`${BASE}/assessments/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await fetch(`${BASE}/scoring/assessments/all/`, {
+    headers: { 
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken()}` 
+    },
   });
-  if (!res.ok) throw new Error("Failed to load assessments");
+  if (!res.ok) throw new Error("Failed to load analyst assessments");
   return res.json();
 }
 

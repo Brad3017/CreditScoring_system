@@ -113,4 +113,28 @@ class SubmitCreditAssessmentView(APIView):
             "recommended_limit": float(assessment.recommended_limit),
             "explanation": assessment.shap_explanation,
             "created_at": assessment.created_at.strftime("%b %d, %Y")
-        }, status=status.HTTP_201_CREATED)                  
+        }, status=status.HTTP_201_CREATED)        
+
+
+
+class AllAssessmentsAnalystView(APIView):
+    permission_classes = [IsAnalystOrAdmin]
+
+    def get(self, request):
+        assessments = CreditAssessment.objects.select_related("request").order_by("-created_at")
+        results = []
+        for a in assessments:
+            results.append({
+                "id": f"ASSESS-{a.id}",
+                "business_name": a.request.business_name,
+                "sector": a.request.sector,
+                "county": a.request.county,
+                "monthly_revenue": float(a.request.monthly_revenue_kes),
+                "credit_score": a.credit_score,
+                "probability_of_default": float(a.probability_of_default),
+                "risk_category": a.risk_category,
+                "recommended_limit": float(a.recommended_limit),
+                "explanation": a.shap_explanation,
+                "created_at": a.created_at.strftime("%b %d, %Y")
+            })
+        return Response(results, status=status.HTTP_200_OK)                  
