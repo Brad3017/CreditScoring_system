@@ -8,6 +8,10 @@ import AnalystDashboard from './pages/AnalystDashboard';
 import AssessmentResultPage from './pages/AssessmentResultPage';
 import MyAssessments from "./pages/MyAssessments";
 import BusinessProfilePage from "./pages/BusinessProfilePage";
+import MsmeRecords from "./pages/analyst/MsmeRecords";
+import AssessmentRequests from "./pages/analyst/AssessmentRequests";
+import RiskAnalytics from "./pages/analyst/RiskAnalytics";
+import ReviewHistory from "./pages/analyst/ReviewHistory";
 import { getToken } from "./lib/api";
 
 
@@ -23,6 +27,10 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/analyst" element={<AnalystDashboard />} />
+        <Route path="/analyst/requests" element={<Private><AssessmentRequests /></Private>} />
+        <Route path="/analyst/msmes" element={<Private><MsmeRecords /></Private>} />
+        <Route path="/analyst/analytics" element={<Private><RiskAnalytics /></Private>} />
+        <Route path="/analyst/reviews" element={<Private><ReviewHistory /></Private>} />
        
         <Route
           path="/home"
