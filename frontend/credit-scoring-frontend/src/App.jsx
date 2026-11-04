@@ -31,6 +31,7 @@ export default function App() {
         <Route path="/analyst/msmes" element={<Private><MsmeRecords /></Private>} />
         <Route path="/analyst/analytics" element={<Private><RiskAnalytics /></Private>} />
         <Route path="/analyst/reviews" element={<Private><ReviewHistory /></Private>} />
+
        
         <Route
           path="/home"
