@@ -159,7 +159,7 @@ def evaluate_credit_request(credit_req):
             else:
                 df[col] = df[col].astype("category")
 
-   # E. Order columns strictly as trained (16 features)
+    # E. Order columns strictly as trained (16 features)
     default_features = [
         "sector", "business_age_years", "legal_status", "location_type",
         "employees_count", "existing_loans", "prior_loan_count", "late_payment_history",
@@ -172,6 +172,7 @@ def evaluate_credit_request(credit_req):
     expected_features = [f for f in expected_features if f in df.columns]
     
     ordered_df = df[expected_features]
+    
     # F. Run Inference
     prob_default = float(xgb_model.predict_proba(ordered_df)[0, 1])
     credit_score = int(np.clip(850 - (prob_default * 550), 300, 850))

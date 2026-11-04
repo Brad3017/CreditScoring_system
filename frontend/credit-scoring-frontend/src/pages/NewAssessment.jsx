@@ -26,6 +26,17 @@ import {
   Save,
 } from "lucide-react";
 
+const kenyaCounties = [
+  "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa", 
+  "Homa Bay", "Isiolo", "Kajiado", "Kakamega", "Kakamega", "Kericho", "Kiambu", 
+  "Kilifi", "Kirinyaga", "Kisii", "Kisumu", "Kitui", "Kwale", "Laikipia", 
+  "Lamu", "Machakos", "Makueni", "Mandera", "Marsabit", "Meru", "Migori", 
+  "Mombasa", "Murang'a", "Nairobi", "Nakuru", "Nandi", "Narok", "Nyamira", 
+  "Nyandarua", "Nyeri", "Samburu", "Siaya", "Taita-Taveta", "Tana River", 
+  "Tharaka-Nithi", "Trans Nzoia", "Turkana", "Uasin Gishu", "Vihiga", 
+  "Wajir", "West Pokot"
+];
+
 export default function NewAssessment() {
   const navigate = useNavigate();
 
@@ -47,7 +58,7 @@ export default function NewAssessment() {
     owner_education: "Secondary",
 
     // Step 2: Financial Metrics
-    monthly_revenue_kes: 450000,
+    monthly_revenue_kes: 200000,
     monthly_profit_kes: 95000,
     loan_amount: 500000,
     tenure_months: 12,
@@ -327,6 +338,7 @@ export default function NewAssessment() {
                       </select>
                     </div>
 
+                    
                     <div>
                       <label className="text-xs font-semibold text-slate-700 block mb-1.5">
                         County / Location *
@@ -337,14 +349,12 @@ export default function NewAssessment() {
                         onChange={handleInputChange}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none bg-white"
                       >
-                        <option value="Nairobi">Nairobi</option>
-                        <option value="Kiambu">Kiambu</option>
-                        <option value="Machakos">Machakos</option>
-                        <option value="Nakuru">Nakuru</option>
-                        <option value="Mombasa">Mombasa</option>
-                        <option value="Uasin Gishu">Uasin Gishu</option>
-                        <option value="Kisii">Kisii</option>
-                        <option value="Other">Other County</option>
+                        <option value="" disabled>Select a county</option>
+                        {kenyaCounties.map((countyName) => (
+                          <option key={countyName} value={countyName}>
+                            {countyName}
+                          </option>
+                        ))}
                       </select>
                     </div>
 

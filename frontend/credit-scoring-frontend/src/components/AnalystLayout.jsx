@@ -36,7 +36,7 @@ export default function AnalystLayout({ title, subtitle, user, children, actions
     { label: "MSME Records", icon: Building2, path: "/analyst/msmes" },
     { label: "Risk Analytics", icon: BarChart3, path: "/analyst/analytics" },
     { label: "Review History", icon: History, path: "/analyst/reviews" },
-    { label: "My Profile", icon: User, path: "/profile" },
+    { label: "My Profile", icon: User, path: "analyst/profile" },
   ];
 
   return (

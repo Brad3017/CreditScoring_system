@@ -24,6 +24,17 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+const kenyaCounties = [
+  "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa", 
+  "Homa Bay", "Isiolo", "Kajiado", "Kakamega", "Kakamega", "Kericho", "Kiambu", 
+  "Kilifi", "Kirinyaga", "Kisii", "Kisumu", "Kitui", "Kwale", "Laikipia", 
+  "Lamu", "Machakos", "Makueni", "Mandera", "Marsabit", "Meru", "Migori", 
+  "Mombasa", "Murang'a", "Nairobi", "Nakuru", "Nandi", "Narok", "Nyamira", 
+  "Nyandarua", "Nyeri", "Samburu", "Siaya", "Taita-Taveta", "Tana River", 
+  "Tharaka-Nithi", "Trans Nzoia", "Turkana", "Uasin Gishu", "Vihiga", 
+  "Wajir", "West Pokot"
+];
+
 export default function BusinessProfilePage() {
   const navigate = useNavigate();
 
@@ -46,7 +57,7 @@ export default function BusinessProfilePage() {
   const [businessForm, setBusinessForm] = useState({
     business_name: "",
     sector: "Retail",
-    county: "Nairobi",
+    county: "",
     location_type: "Urban",
     legal_status: "Sole",
     business_age_years: 3,
@@ -69,7 +80,7 @@ export default function BusinessProfilePage() {
             email: me.email || "",
             national_id: me.national_id || "",
             phone: me.phone || "",
-            county: me.county || "Nairobi",
+            county: me.county || "",
           });
         }
 
@@ -366,14 +377,12 @@ export default function BusinessProfilePage() {
                           onChange={handlePersonalChange}
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none bg-white"
                         >
-                          <option value="Nairobi">Nairobi</option>
-                          <option value="Kiambu">Kiambu</option>
-                          <option value="Machakos">Machakos</option>
-                          <option value="Nakuru">Nakuru</option>
-                          <option value="Mombasa">Mombasa</option>
-                          <option value="Uasin Gishu">Uasin Gishu</option>
-                          <option value="Kisii">Kisii</option>
-                          <option value="Other">Other County</option>
+                          <option value="" disabled>Select your county</option>
+                          {kenyaCounties.map((countyName) => (
+                            <option key={countyName} value={countyName}>
+                              {countyName}
+                          </option>
+                          ))}
                         </select>
                       </div>
                     </div>
