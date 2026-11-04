@@ -8,7 +8,17 @@ class BusinessProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="businesses"
     )
+
+
+    kra_pin = models.CharField(
+        max_length=15, 
+        unique=True,  # Ensures no two businesses can share the same PIN
+        null=True,    # Required so existing database rows don't break
+        blank=True,
+        help_text="Standard 11-character KRA PIN (e.g., P123456789A)"
+    )
     business_name = models.CharField(max_length=150)
+    kra_pin = models.CharField(max_length=15, unique=True, null=True, blank=True)
     sector = models.CharField(max_length=50)
     business_age_years = models.IntegerField()
     legal_status = models.CharField(max_length=50)

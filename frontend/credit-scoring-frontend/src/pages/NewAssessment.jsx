@@ -49,7 +49,8 @@ export default function NewAssessment() {
   const [form, setForm] = useState({
     // Step 1: Business Profile
     business_name: "",
-    legal_status: "Sole",
+    kra_pin: "",
+    legal_status: "",
     sector: "Retail",
     county: "Nairobi",
     business_age_years: 3,
@@ -84,14 +85,17 @@ export default function NewAssessment() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  async function handleFinalSubmit(e) {
+ async function handleFinalSubmit(e) {
     if (e) e.preventDefault();
     setError("");
     setBusy(true);
 
     try {
-      const result = await submitAssessment(form);
-      navigate("/assessment/results", { state: { assessment: result } });
+      await submitAssessment(form);
+      
+      // Changed: Route directly to the new My Assessments history page
+      navigate("/assessments"); 
+      
     } catch (err) {
       setError(err.message || "Assessment evaluation failed.");
     } finally {
@@ -126,7 +130,7 @@ export default function NewAssessment() {
             </div>
             <div>
               <h2 className="text-white font-bold text-base leading-tight tracking-tight">
-                CreditScore AI
+                BiasharaScore
               </h2>
               <span className="text-[11px] text-slate-400 font-medium">
                 Smarter Credit Decisions
@@ -301,6 +305,22 @@ export default function NewAssessment() {
                         onChange={handleInputChange}
                         placeholder="e.g. Baraka Hardware Supplies"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none"
+                        required
+                      />
+                    </div>
+
+
+                    {/* NEW: KRA PIN Field */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-2">KRA PIN</label>
+                      <input
+                        type="text"
+                        name="kra_pin"
+                        value={form.kra_pin}
+                        onChange={handleInputChange}
+                        className="w-full p-3 rounded-xl border border-slate-200 text-sm uppercase focus:border-black focus:ring-1 focus:ring-black outline-none uppercase"
+                        placeholder="e.g. P123456789A"
+                        maxLength={11} // Standard KRA PIN length
                         required
                       />
                     </div>
