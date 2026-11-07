@@ -1,0 +1,7 @@
+# Add these lines to CreditScoringSystem/backend/requirements.txt (if not already there).
+# Keep scikit-learn, xgboost, pandas, numpy and joblib at the SAME versions you trained with,
+# or the saved model may fail to load. Check with:  pip freeze | findstr /i "scikit xgboost pandas numpy joblib"
+gunicorn
+psycopg[binary]
+whitenoise
+python-decouple

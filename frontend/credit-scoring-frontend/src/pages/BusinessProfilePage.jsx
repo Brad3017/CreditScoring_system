@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { COUNTIES } from "../lib/counties";
-import { fetchMe, fetchMyAssessments, getToken } from "../lib/api";
+import { fetchMe, fetchMyAssessments, updateMe, saveBusinessProfile } from "../lib/api";
 
-// Base URL for the Django API. Set VITE_API_URL in your .env file for deployment.
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-
-export default function BusinessProfile() {
+export default function BusinessProfilePage() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -94,36 +91,18 @@ export default function BusinessProfile() {
     setSaving(true);
     setNotice("");
     setError("");
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` };
-
     try {
       // 1. Personal details
-      const personalRes = await fetch(`${API}/api/auth/me/`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify(personal),
-      });
-      if (!personalRes.ok) {
-        const body = await personalRes.json().catch(() => ({}));
-        throw new Error(body.detail || "Your personal details could not be saved.");
-      }
+      const updatedUser = await updateMe(personal);
 
-      // 2. Business details. Endpoint to confirm against your Django urls.py.
-      const businessRes = await fetch(`${API}/api/scoring/business-profile/`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify({
-          ...business,
-          business_age_years: Number(business.business_age_years),
-          employees_count: Number(business.employees_count),
-        }),
+      // 2. Business details
+      await saveBusinessProfile({
+        ...business,
+        business_age_years: Number(business.business_age_years),
+        employees_count: Number(business.employees_count),
       });
-      if (!businessRes.ok) {
-        const body = await businessRes.json().catch(() => ({}));
-        throw new Error(body.detail || "Your business details could not be saved.");
-      }
 
-      setUser(await personalRes.json());
+      setUser(updatedUser);
       setNotice("Your profile is saved.");
     } catch (err) {
       setError(err.message || "Your profile could not be saved. Try again.");

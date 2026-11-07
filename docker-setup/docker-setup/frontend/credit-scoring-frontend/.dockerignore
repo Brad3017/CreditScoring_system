@@ -1,0 +1,5 @@
+# Place in: CreditScoringSystem/frontend/credit-scoring-frontend/.dockerignore
+node_modules
+dist
+.git
+.env
