@@ -1,543 +1,226 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  clearSession,
-  getToken,
-  fetchMe,
-  fetchMyAssessments,
-} from "../lib/api";
-import {
-  LayoutDashboard,
-  FilePlus,
-  History,
-  BarChart3,
-  Building2,
-  LogOut,
-  Bell,
-  Save,
-  CheckCircle2,
-  Building,
-  User,
-  MapPin,
-  Briefcase,
-  ShieldCheck,
-  AlertCircle,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import AppShell from "../components/AppShell";
+import { COUNTIES } from "../lib/counties";
+import { fetchMe, fetchMyAssessments, getToken } from "../lib/api";
 
-const kenyaCounties = [
-  "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa", 
-  "Homa Bay", "Isiolo", "Kajiado", "Kakamega", "Kakamega", "Kericho", "Kiambu", 
-  "Kilifi", "Kirinyaga", "Kisii", "Kisumu", "Kitui", "Kwale", "Laikipia", 
-  "Lamu", "Machakos", "Makueni", "Mandera", "Marsabit", "Meru", "Migori", 
-  "Mombasa", "Murang'a", "Nairobi", "Nakuru", "Nandi", "Narok", "Nyamira", 
-  "Nyandarua", "Nyeri", "Samburu", "Siaya", "Taita-Taveta", "Tana River", 
-  "Tharaka-Nithi", "Trans Nzoia", "Turkana", "Uasin Gishu", "Vihiga", 
-  "Wajir", "West Pokot"
-];
+// Base URL for the Django API. Set VITE_API_URL in your .env file for deployment.
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
-export default function BusinessProfilePage() {
-  const navigate = useNavigate();
-
+export default function BusinessProfile() {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [user, setUser] = useState(null);
-  const [successMsg, setSuccessMsg] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [errors, setErrors] = useState({});
 
-  // Personal Borrower Details
-  const [personalForm, setPersonalForm] = useState({
-    full_name: "",
-    email: "",
-    national_id: "",
-    phone: "",
-    county: "Nairobi",
-  });
-
-  // Enterprise / Business Profile Details
-  const [businessForm, setBusinessForm] = useState({
+  const [personal, setPersonal] = useState({ full_name: "", email: "", national_id: "", phone: "", county: "Nairobi" });
+  const [business, setBusiness] = useState({
     business_name: "",
     sector: "Retail",
-    county: "",
+    county: "Nairobi",
     location_type: "Urban",
     legal_status: "Sole",
-    business_age_years: 3,
-    employees_count: 3,
+    business_age_years: "",
+    employees_count: "",
   });
 
   useEffect(() => {
-    async function initProfile() {
-      setLoading(true);
+    let cancelled = false;
+    async function load() {
       try {
-        const [me, assessments] = await Promise.all([
-          fetchMe(),
-          fetchMyAssessments(),
-        ]);
-
-        if (me) {
-          setUser(me);
-          setPersonalForm({
-            full_name: me.full_name || "",
-            email: me.email || "",
-            national_id: me.national_id || "",
-            phone: me.phone || "",
-            county: me.county || "",
-          });
+        const [me, list] = await Promise.all([fetchMe(), fetchMyAssessments()]);
+        if (cancelled) return;
+        setUser(me);
+        setPersonal({
+          full_name: me.full_name || "",
+          email: me.email || "",
+          national_id: me.national_id || "",
+          phone: me.phone || "",
+          county: me.county || "Nairobi",
+        });
+        // Pre-fill from the latest assessment only when the business has no saved profile yet.
+        const latest = Array.isArray(list) ? list[0] : null;
+        if (latest) {
+          setBusiness((b) => ({
+            ...b,
+            business_name: latest.business_name || b.business_name,
+            sector: latest.sector || b.sector,
+            county: latest.county || b.county,
+          }));
         }
-
-        // Pre-fill business info from the user's latest recorded assessment if available
-        if (Array.isArray(assessments) && assessments.length > 0) {
-          const latest = assessments[0];
-          setBusinessForm({
-            business_name: latest.business_name || "",
-            sector: latest.sector || "Retail",
-            county: latest.county || "Nairobi",
-            location_type: "Urban",
-            legal_status: "Sole",
-            business_age_years: 3,
-            employees_count: 3,
-          });
-        }
-      } catch (err) {
-        console.error("Failed to load profile details:", err.message);
+      } catch {
+        if (!cancelled) setError("We could not load your profile. Refresh the page to try again.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-
-    initProfile();
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  function handleLogout() {
-    clearSession();
-    navigate("/login");
-  }
-
-  function handlePersonalChange(e) {
+  function onPersonal(e) {
     const { name, value } = e.target;
-    setPersonalForm((prev) => ({ ...prev, [name]: value }));
+    setPersonal((p) => ({ ...p, [name]: value }));
+    setNotice("");
   }
 
-  function handleBusinessChange(e) {
+  function onBusiness(e) {
     const { name, value } = e.target;
-    setBusinessForm((prev) => ({ ...prev, [name]: value }));
+    setBusiness((b) => ({ ...b, [name]: value }));
+    setNotice("");
   }
 
-  async function handleSaveProfile(e) {
+  function validate() {
+    const e = {};
+    if (!personal.full_name.trim()) e.full_name = "Enter your full name.";
+    if (!/^\d{7,9}$/.test(personal.national_id.trim())) e.national_id = "Enter your national ID number (7 to 9 digits).";
+    if (!/^(\+254|0)[17]\d{8}$/.test(personal.phone.replace(/\s/g, ""))) e.phone = "Enter a Kenyan phone number, e.g. +254 700 000 000.";
+    if (!business.business_name.trim()) e.business_name = "Enter the business name.";
+    if (!COUNTIES.includes(business.county)) e.county = "Choose a county from the list.";
+    if (business.business_age_years === "" || Number(business.business_age_years) < 0) e.business_age_years = "Enter years trading, 0 or more.";
+    if (business.employees_count === "" || Number(business.employees_count) < 0) e.employees_count = "Enter the number of employees.";
+    return e;
+  }
+
+  async function save(e) {
     e.preventDefault();
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length) return;
+
     setSaving(true);
-    setSuccessMsg("");
-    setErrorMsg("");
+    setNotice("");
+    setError("");
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` };
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/auth/me/", {
+      // 1. Personal details
+      const personalRes = await fetch(`${API}/api/auth/me/`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify(personalForm),
+        headers,
+        body: JSON.stringify(personal),
       });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || "Failed to update profile information.");
+      if (!personalRes.ok) {
+        const body = await personalRes.json().catch(() => ({}));
+        throw new Error(body.detail || "Your personal details could not be saved.");
       }
 
-      const updatedUser = await res.json();
-      setUser(updatedUser);
-      setSuccessMsg("Business and borrower profile saved successfully.");
+      // 2. Business details. Endpoint to confirm against your Django urls.py.
+      const businessRes = await fetch(`${API}/api/scoring/business-profile/`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          ...business,
+          business_age_years: Number(business.business_age_years),
+          employees_count: Number(business.employees_count),
+        }),
+      });
+      if (!businessRes.ok) {
+        const body = await businessRes.json().catch(() => ({}));
+        throw new Error(body.detail || "Your business details could not be saved.");
+      }
+
+      setUser(await personalRes.json());
+      setNotice("Your profile is saved.");
     } catch (err) {
-      setErrorMsg(err.message || "Failed to update profile.");
+      setError(err.message || "Your profile could not be saved. Try again.");
     } finally {
       setSaving(false);
     }
   }
 
-  const initials = user?.full_name
-    ? user.full_name
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .substring(0, 2)
-        .toUpperCase()
-    : "ME";
-
   return (
-    <div className="flex h-screen bg-[#F4F6FA] font-sans antialiased text-slate-800 overflow-hidden">
-      {/* ─── SIDEBAR ─── */}
-      <aside className="w-64 bg-[#090D14] flex flex-col justify-between border-r border-slate-900 z-20 shrink-0">
-        <div>
-          <div className="px-6 py-6 border-b border-white/5 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-white text-black flex items-center justify-center font-bold text-lg shadow-md">
-              IQ
+    <AppShell user={user}>
+      <h1 style={{ fontSize: "var(--text-2xl)" }}>Business profile</h1>
+      <p style={{ color: "var(--ink-2)", margin: "var(--space-2) 0 var(--space-8)" }}>
+        Your personal details and the business they belong to. These are used when you run an assessment.
+      </p>
+
+      {loading && <p style={{ color: "var(--ink-2)" }}>Loading…</p>}
+      {error && <p role="alert" style={{ color: "var(--risk-high)", marginBottom: "var(--space-6)" }}>{error}</p>}
+
+      {!loading && (
+        <form onSubmit={save} noValidate>
+          <section aria-labelledby="personal-heading">
+            <h2 id="personal-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Your details</h2>
+            <div style={grid}>
+              <Field label="Full name" name="full_name" value={personal.full_name} onChange={onPersonal} error={errors.full_name} />
+              <Field label="Email" name="email" value={personal.email} disabled hint="Email cannot be changed here." />
+              <Field label="National ID number" name="national_id" value={personal.national_id} onChange={onPersonal} error={errors.national_id} />
+              <Field label="Phone (M-Pesa)" name="phone" value={personal.phone} onChange={onPersonal} error={errors.phone} placeholder="+254 700 000 000" />
+              <SelectField label="Your county" name="county" value={personal.county} onChange={onPersonal} options={COUNTIES} />
             </div>
-            <div>
-              <h2 className="text-white font-bold text-base leading-tight tracking-tight">
-                CreditScore AI
-              </h2>
-              <span className="text-[11px] text-slate-400 font-medium">
-                Smarter Credit Decisions
-              </span>
+          </section>
+
+          <hr className="rule" />
+
+          <section aria-labelledby="business-heading">
+            <h2 id="business-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Your business</h2>
+            <div style={grid}>
+              <Field label="Business name" name="business_name" value={business.business_name} onChange={onBusiness} error={errors.business_name} />
+              <SelectField label="Sector" name="sector" value={business.sector} onChange={onBusiness}
+                options={["Retail", "Manufacturing", "Services", "Agriculture"]} />
+              <SelectField label="Business county" name="county" value={business.county} onChange={onBusiness} options={COUNTIES} error={errors.county} />
+              <SelectField label="Operating environment" name="location_type" value={business.location_type} onChange={onBusiness}
+                options={[["Urban", "Urban"], ["Rural", "Rural"]]} />
+              <SelectField label="Legal structure" name="legal_status" value={business.legal_status} onChange={onBusiness}
+                options={[["Sole", "Sole proprietorship"], ["Partnership", "Partnership"], ["Limited", "Limited company"]]} />
+              <Field label="Years trading" name="business_age_years" type="number" min="0" value={business.business_age_years} onChange={onBusiness} error={errors.business_age_years} />
+              <Field label="Number of employees" name="employees_count" type="number" min="0" value={business.employees_count} onChange={onBusiness} error={errors.employees_count} />
             </div>
+          </section>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", marginTop: "var(--space-8)", flexWrap: "wrap" }}>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Save profile"}
+            </button>
+            {notice && <p role="status" style={{ color: "var(--ink-2)" }}>{notice}</p>}
           </div>
+        </form>
+      )}
+    </AppShell>
+  );
+}
 
-          <nav className="p-4 space-y-1.5">
-            <button
-              onClick={() => navigate("/home")}
-              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-white/5"
-            >
-              <LayoutDashboard size={18} />
-              Overview
-            </button>
-            <button
-              onClick={() => navigate("/assessment/new")}
-              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-white/5"
-            >
-              <FilePlus size={18} />
-              New Assessment
-            </button>
-            <button
-              onClick={() => navigate("/assessments")}
-              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-white/5"
-            >
-              <History size={18} />
-              My Assessments
-            </button>
-            <button
-              onClick={() => navigate("/analytics")}
-              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-white/5"
-            >
-              <BarChart3 size={18} />
-              Analytics
-            </button>
-            <button
-              onClick={() => navigate("/profile")}
-              className="w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-semibold transition-all bg-white text-black shadow-sm"
-            >
-              <Building2 size={18} className="text-black" />
-              Business Profile
-            </button>
-          </nav>
-        </div>
+const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--space-6)" };
 
-        <div className="p-4 border-t border-white/5 bg-[#070A0F]">
-          <div className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-all">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="h-9 w-9 rounded-full bg-slate-800 text-white border border-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
-                {initials}
-              </div>
-              <div className="truncate">
-                <p className="text-xs font-semibold text-white truncate">
-                  {user?.full_name || "MSME Owner"}
-                </p>
-                <p className="text-[10px] text-slate-400 truncate">
-                  {user?.email || "Registered Applicant"}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              title="Logout"
-              className="text-slate-500 hover:text-rose-400 p-1.5 transition-colors"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
-        </div>
-      </aside>
+const controlStyle = {
+  font: "inherit",
+  width: "100%",
+  padding: "var(--space-2) var(--space-3)",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius)",
+  background: "var(--surface)",
+  color: "var(--ink)",
+};
 
-      {/* ─── MAIN CONTENT ─── */}
-      <div className="flex-1 flex flex-col overflow-y-auto">
-        <header className="px-8 py-5 flex items-center justify-between bg-white border-b border-slate-200/80 sticky top-0 z-10">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Business Profile & KYC
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Manage your enterprise information and verified applicant credentials.
-            </p>
-          </div>
+function Field({ label, name, error, hint, ...rest }) {
+  const id = `p-${name}`;
+  return (
+    <div>
+      <label htmlFor={id} style={{ display: "block", fontWeight: 600, marginBottom: "var(--space-1)" }}>{label}</label>
+      <input id={id} name={name} aria-invalid={!!error} style={controlStyle} {...rest} />
+      {error && <p style={{ color: "var(--risk-high)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{error}</p>}
+      {hint && !error && <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{hint}</p>}
+    </div>
+  );
+}
 
-          <div className="flex items-center gap-4">
-            <button className="h-9 w-9 rounded-xl border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 relative">
-              <Bell size={16} />
-              <span className="h-2 w-2 rounded-full bg-rose-500 absolute top-2 right-2 ring-2 ring-white"></span>
-            </button>
-
-            <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="h-8 w-8 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">
-                {initials}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="p-8 max-w-7xl w-full mx-auto space-y-6">
-          {loading ? (
-            <div className="min-h-[400px] flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-            </div>
-          ) : (
-            <form onSubmit={handleSaveProfile} className="space-y-6">
-              {successMsg && (
-                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
-                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  {successMsg}
-                </div>
-              )}
-
-              {errorMsg && (
-                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
-                  <AlertCircle size={16} className="text-rose-600 shrink-0" />
-                  {errorMsg}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* LEFT: FORM FIELDS (BORROWER KYC + ENTERPRISE DETAILS) */}
-                <div className="lg:col-span-8 space-y-6">
-                  {/* 1. Borrower KYC & Contact */}
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
-                    <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                      <span className="p-2 rounded-xl bg-slate-100 text-slate-900">
-                        <User size={18} />
-                      </span>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">
-                          Applicant & KYC Verification
-                        </h3>
-                        <p className="text-xs text-slate-400">
-                          Personal credentials used to link credit bureau and scoring logs.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Full Legal Name
-                        </label>
-                        <input
-                          name="full_name"
-                          value={personalForm.full_name}
-                          onChange={handlePersonalChange}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Email Address
-                        </label>
-                        <input
-                          name="email"
-                          type="email"
-                          value={personalForm.email}
-                          disabled
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs cursor-not-allowed"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          National ID Number *
-                        </label>
-                        <input
-                          name="national_id"
-                          value={personalForm.national_id}
-                          onChange={handlePersonalChange}
-                          placeholder="e.g. 34892011"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Phone Number (M-Pesa registered) *
-                        </label>
-                        <input
-                          name="phone"
-                          value={personalForm.phone}
-                          onChange={handlePersonalChange}
-                          placeholder="+254 700 000 000"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Residential County
-                        </label>
-                        <select
-                          name="county"
-                          value={personalForm.county}
-                          onChange={handlePersonalChange}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none bg-white"
-                        >
-                          <option value="" disabled>Select your county</option>
-                          {kenyaCounties.map((countyName) => (
-                            <option key={countyName} value={countyName}>
-                              {countyName}
-                          </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 2. Registered Enterprise Structure */}
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
-                    <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-                      <span className="p-2 rounded-xl bg-slate-100 text-slate-900">
-                        <Building size={18} />
-                      </span>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">
-                          Registered Enterprise Information
-                        </h3>
-                        <p className="text-xs text-slate-400">
-                          Baseline business parameters referenced during risk scoring.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Enterprise Trading Name
-                        </label>
-                        <input
-                          name="business_name"
-                          value={businessForm.business_name}
-                          onChange={handleBusinessChange}
-                          placeholder="e.g. Home Furnitures"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Business Sector
-                        </label>
-                        <select
-                          name="sector"
-                          value={businessForm.sector}
-                          onChange={handleBusinessChange}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none bg-white"
-                        >
-                          <option value="Retail">Retail</option>
-                          <option value="Manufacturing">Manufacturing</option>
-                          <option value="Services">Services</option>
-                          <option value="Agriculture">Agriculture</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Operating Environment
-                        </label>
-                        <select
-                          name="location_type"
-                          value={businessForm.location_type}
-                          onChange={handleBusinessChange}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none bg-white"
-                        >
-                          <option value="Urban">Urban / City Center</option>
-                          <option value="Rural">Rural / Outlying</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                          Legal Entity Type
-                        </label>
-                        <select
-                          name="legal_status"
-                          value={businessForm.legal_status}
-                          onChange={handleBusinessChange}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-black focus:outline-none bg-white"
-                        >
-                          <option value="Sole">Sole Proprietorship</option>
-                          <option value="Partnership">Partnership</option>
-                          <option value="Limited">Limited Company</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="px-6 py-2.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-all"
-                    >
-                      <Save size={14} />
-                      {saving ? "Saving Changes..." : "Save Profile Changes"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* RIGHT: KYC STATUS & BUSINESS BADGE CARD */}
-                <div className="lg:col-span-4 space-y-6">
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
-                    <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
-                      <ShieldCheck size={16} className="text-slate-800" />
-                      KYC Compliance Status
-                    </div>
-
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-3 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Identity Record</span>
-                        {personalForm.national_id ? (
-                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                            <CheckCircle2 size={13} /> Verified
-                          </span>
-                        ) : (
-                          <span className="text-amber-600 font-semibold">Pending</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Phone Contact</span>
-                        {personalForm.phone ? (
-                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                            <CheckCircle2 size={13} /> Active
-                          </span>
-                        ) : (
-                          <span className="text-amber-600 font-semibold">Missing</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Assessment Eligibility</span>
-                        <span className="text-emerald-700 font-bold">Enabled</span>
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Maintaining up-to-date KYC details prevents delays during credit scoring and facility verification.
-                    </p>
-                  </div>
-
-                  {/* Summary Callout */}
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-3 text-xs text-slate-600">
-                    <div className="flex items-center gap-2 font-bold text-slate-900">
-                      <Briefcase size={16} />
-                      Platform Role
-                    </div>
-                    <p className="text-slate-500">
-                      Registered as an <strong>MSME Borrower</strong>. For compliance or analytical reviews, requests are audited by accredited risk officers.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </form>
-          )}
-        </main>
-      </div>
+function SelectField({ label, name, options, error, ...rest }) {
+  const id = `p-${name}`;
+  return (
+    <div>
+      <label htmlFor={id} style={{ display: "block", fontWeight: 600, marginBottom: "var(--space-1)" }}>{label}</label>
+      <select id={id} name={name} aria-invalid={!!error} style={controlStyle} {...rest}>
+        {options.map((o) => {
+          const [value, text] = Array.isArray(o) ? o : [o, o];
+          return <option key={value} value={value}>{text}</option>;
+        })}
+      </select>
+      {error && <p style={{ color: "var(--risk-high)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{error}</p>}
     </div>
   );
 }

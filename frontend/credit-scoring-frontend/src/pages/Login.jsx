@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, saveSession } from "../lib/api";
+import AuthShell, { Field, PasswordField, ErrorNote } from "../components/AuthShell";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -16,14 +17,14 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setBusy(true);
-  
+
     try {
       const data = await login(form);
-  
+
       // Save tokens + role
       saveSession(data.access, data.refresh, data.role || "owner");
-  
-      // Route by role — ONE navigate() call per branch
+
+      // Route by role
       if (data.role === "analyst") {
         navigate("/analyst");
       } else if (data.role === "admin") {
@@ -39,39 +40,46 @@ export default function Login() {
   }
 
   return (
-    <div className="page">
-      <form className="card" onSubmit={submit}>
-        <h1>Log in</h1>
+    <AuthShell title="Welcome back" subtitle="Log in to see your assessments and credit score.">
+      <form onSubmit={submit} noValidate={false}>
+        <ErrorNote>{error}</ErrorNote>
 
-        <label>Email</label>
-        <input
+        <Field
+          label="Email"
           type="email"
           name="email"
           value={form.email}
           onChange={change}
-          placeholder="Enter your email"
+          placeholder="you@example.com"
+          autoComplete="email"
           required
         />
 
-        <label>Password</label>
-        <input
-          type="password"
+        <PasswordField
+          label="Password"
           name="password"
           value={form.password}
           onChange={change}
+          autoComplete="current-password"
           required
         />
 
-        {error && <p className="error">{error}</p>}
-
-        <button disabled={busy}>
-          {busy ? "Logging in..." : "Log in"}
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={busy}
+          style={{ width: "100%", justifyContent: "center", marginTop: "var(--space-2)" }}
+        >
+          {busy ? "Logging in…" : "Log in"}
         </button>
-
-        <p className="muted">
-          Don't have an account? <Link to="/signup">Sign up</Link>
-        </p>
       </form>
-    </div>
+
+      <p style={{ margin: "var(--space-6) 0 0", textAlign: "center", color: "var(--ink-2)", fontSize: "var(--text-sm)" }}>
+        New to BiasharaScore?{" "}
+        <Link to="/signup" style={{ color: "var(--accent)", fontWeight: 600 }}>
+          Create an account
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signup, saveSession } from "../lib/api";
+import AuthShell, { Field, PasswordField, ErrorNote } from "../components/AuthShell";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -17,16 +18,18 @@ export default function Signup() {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
+  const mismatch = form.confirm !== "" && form.password !== form.confirm;
+
   async function submit(e) {
     e.preventDefault();
     setError("");
 
     if (form.password !== form.confirm) {
-      setError("Passwords don't match");
+      setError("Passwords don't match.");
       return;
     }
     if (form.password.length < 8) {
-      setError("Password must be at least 8 characters");
+      setError("Password must be at least 8 characters.");
       return;
     }
 
@@ -47,57 +50,72 @@ export default function Signup() {
   }
 
   return (
-    <div className="page">
-      <form className="card" onSubmit={submit}>
-        <h1>Create an account</h1>
+    <AuthShell title="Create your account" subtitle="Set up your profile, then run your first assessment.">
+      <form onSubmit={submit}>
+        <ErrorNote>{error}</ErrorNote>
 
-        <label>Full name</label>
-        <input
+        <Field
+          label="Full name"
           name="full_name"
           value={form.full_name}
           onChange={change}
-          
+          autoComplete="name"
           required
         />
 
-        <label>Email</label>
-        <input
+        <Field
+          label="Email"
           type="email"
           name="email"
           value={form.email}
           onChange={change}
-         
+          placeholder="you@example.com"
+          autoComplete="email"
           required
         />
 
-        <label>Password</label>
-        <input
-          type="password"
+        <PasswordField
+          label="Password"
           name="password"
           value={form.password}
           onChange={change}
+          autoComplete="new-password"
+          minLength={8}
+          hint="At least 8 characters."
           required
         />
 
-        <label>Confirm password</label>
-        <input
-          type="password"
+        <PasswordField
+          label="Confirm password"
           name="confirm"
           value={form.confirm}
           onChange={change}
+          autoComplete="new-password"
           required
         />
 
-        {error && <p className="error">{error}</p>}
+        {mismatch && (
+          <p style={{ margin: "calc(var(--space-2) * -1) 0 var(--space-4)", color: "var(--risk-high)", fontSize: "var(--text-xs)" }}>
+            Passwords don't match yet.
+          </p>
+        )}
 
-        <button disabled={busy}>
-          {busy ? "Creating account..." : "Sign up"}
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={busy}
+          style={{ width: "100%", justifyContent: "center", marginTop: "var(--space-2)" }}
+        >
+          {busy ? "Creating account…" : "Create account"}
         </button>
-
-        <p className="muted">
-          Already have an account? <Link to="/login">Log in</Link>
-        </p>
       </form>
-    </div>
+
+      <p style={{ margin: "var(--space-6) 0 0", textAlign: "center", color: "var(--ink-2)", fontSize: "var(--text-sm)" }}>
+        Already have an account?{" "}
+        <Link to="/login" style={{ color: "var(--accent)", fontWeight: 600 }}>
+          Log in
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

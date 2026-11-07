@@ -18,7 +18,7 @@ class IsAnalystOrAdmin(IsAuthenticated):
 class AssessmentListView(APIView):
    permission_classes = [IsAuthenticated]
 
-def get(self, request):
+   def get(self, request):
         assessments = CreditAssessment.objects.filter(
             request__user=request.user
         ).select_related("request").order_by("-created_at")
@@ -61,7 +61,7 @@ class SubmitCreditAssessmentView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Save CreditRequest linked to logged-in user
+        # 1. Save CreditRequest linked to the logged-in user
         credit_req = serializer.save(user=request.user)
 
         # 2. Maintain or link a BusinessProfile record
@@ -75,7 +75,7 @@ class SubmitCreditAssessmentView(APIView):
                 "legal_status": credit_req.legal_status,
                 "business_age_years": credit_req.business_age_years,
                 "employees_count": credit_req.employees_count,
-            }
+            },
         )
         credit_req.business = business_profile
         credit_req.save()
@@ -86,10 +86,10 @@ class SubmitCreditAssessmentView(APIView):
         except Exception as e:
             return Response(
                 {"error": f"Scoring engine error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )        
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-# 4. Save assessment record in PostgreSQL
+        # 4. Save assessment record
         assessment = CreditAssessment.objects.create(
             request=credit_req,
             credit_score=results["credit_score"],
@@ -97,10 +97,10 @@ class SubmitCreditAssessmentView(APIView):
             risk_category=results["risk_category"],
             recommended_limit=results["recommended_limit"],
             shap_explanation=results["shap_explanation"],
-            model_version="xgb_msme_v1"
-        )  
+            model_version="xgb_msme_v1",
+        )
 
-# 5. Return JSON payload matching Home.jsx state
+        # 5. Return JSON payload
         return Response({
             "id": f"ASSESS-{assessment.id}",
             "business_name": credit_req.business_name,
@@ -112,10 +112,8 @@ class SubmitCreditAssessmentView(APIView):
             "risk_category": assessment.risk_category,
             "recommended_limit": float(assessment.recommended_limit),
             "explanation": assessment.shap_explanation,
-            "created_at": assessment.created_at.strftime("%b %d, %Y")
-        }, status=status.HTTP_201_CREATED)        
-
-
+            "created_at": assessment.created_at.strftime("%b %d, %Y"),
+        }, status=status.HTTP_201_CREATED)
 
 class AllAssessmentsAnalystView(APIView):
     permission_classes = [IsAnalystOrAdmin]

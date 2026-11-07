@@ -1,0 +1,274 @@
+/* BiasharaScore design tokens (v2)
+   Import once in the app entry file: import "./styles/tokens.css";
+   Light is the default. Dark mode is opt-in with <html data-theme="dark">. */
+
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap");
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces and text */
+  --paper: #f6f4ee;
+  --surface: #ffffff;
+  --ink: #17201c;
+  --ink-2: #5a625c;
+  --line: #e4e0d5;
+  --line-strong: #c9c2b1;
+
+  /* Accent: actions only */
+  --accent: #0e5a55;
+  --accent-hover: #0a4541;
+  --accent-soft: #e2eeec;
+  --focus: #2563eb;
+
+  /* Risk: deep enough to read as text on white */
+  --risk-low: #2a6b48;
+  --risk-low-soft: #dcefe3;
+  --risk-moderate: #946117;
+  --risk-moderate-soft: #f5e9cf;
+  --risk-high: #9c3a2b;
+  --risk-high-soft: #f4dfd9;
+
+  /* Type */
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.625rem;
+  --text-2xl: 2.25rem;
+  --text-score: 4.75rem;
+
+  /* Space and shape */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --radius: 8px;
+  --radius-lg: 14px;
+  --shadow: 0 1px 2px rgba(23, 32, 28, 0.04), 0 4px 16px rgba(23, 32, 28, 0.05);
+  --measure: 1080px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #13181a;
+  --surface: #1b2124;
+  --ink: #ebeee9;
+  --ink-2: #a2aaa4;
+  --line: #2c343a;
+  --line-strong: #46525a;
+  --accent: #6cc0b8;
+  --accent-hover: #8ad2cb;
+  --accent-soft: #1d3634;
+  --risk-low: #86d0a2;
+  --risk-low-soft: #1c3026;
+  --risk-moderate: #ebbf72;
+  --risk-moderate-soft: #362e18;
+  --risk-high: #f09a88;
+  --risk-high-soft: #3b231e;
+  --shadow: none;
+}
+
+html,
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--ink-2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Layout pieces */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-8);
+}
+
+.two-col {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: stretch;
+  justify-content: stretch;
+  justify-items: stretch;
+}
+
+/* Higher-specificity overrides, so stray rules from other stylesheets cannot shrink cards or recolour buttons inside them */
+.two-col > .card {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  justify-self: stretch;
+}
+
+.card .btn-secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.card .btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.stack > * + * {
+  margin-top: var(--space-12);
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+  margin: var(--space-12) 0;
+}
+
+.section-title {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-5);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6) var(--space-8);
+  margin: 0;
+}
+
+.fact {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-strong);
+}
+
+.fact dt {
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+}
+
+.fact dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.factor-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.factor {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: var(--text-base);
+}
+
+.factor-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 0.45em;
+}
+
+.factor-tag {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 760px) {
+  .two-col {
+    grid-template-columns: 1fr;
+  }
+  .card {
+    padding: var(--space-6);
+  }
+  .facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

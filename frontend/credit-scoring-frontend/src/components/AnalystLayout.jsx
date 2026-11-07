@@ -50,7 +50,7 @@ export default function AnalystLayout({ title, subtitle, user, children, actions
             </div>
             <div>
               <h2 className="text-white font-bold text-base leading-tight tracking-tight">
-                MsingiScore
+                BiasharaScore
               </h2>
               <span className="text-[11px] text-slate-400 font-medium">
                 AI-Powered Credit Intelligence

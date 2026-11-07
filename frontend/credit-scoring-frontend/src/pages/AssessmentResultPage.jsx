@@ -1,106 +1,143 @@
-import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import AssessmentResultsCard from '../components/AssessmentResultsCard';
-import { ArrowLeft, Download } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import AppShell from "../components/AppShell";
+import RiskScale from "../components/RiskScale";
+import { fetchMe } from "../lib/api";
+
+const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
+
+function parseFactor(text = "") {
+  const m = text.match(/^(Positive|Caution):\s*(.*)$/i);
+  if (!m) return { reduces: null, text };
+  return { reduces: m[1].toLowerCase() === "positive", text: m[2] };
+}
 
 export default function AssessmentResultPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  
-  // Get the assessment data passed via router state from the form submission
   const assessment = location.state?.assessment;
+  const [user, setUser] = useState(null);
 
-  // Fallback if someone navigates directly to the URL without submitting data
+  useEffect(() => {
+    fetchMe().then(setUser).catch(() => {});
+  }, []);
+
   if (!assessment) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center max-w-md">
-          <h2 className="text-xl font-bold text-slate-800 mb-2">No Assessment Found</h2>
-          <p className="text-slate-600 mb-6">Please submit a new credit assessment from the dashboard.</p>
-          <button
-            onClick={() => navigate('/')}
-            className="bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
+      <AppShell user={user}>
+        <h1 style={{ fontSize: "var(--text-2xl)" }}>No report selected</h1>
+        <p style={{ color: "var(--ink-2)", margin: "var(--space-3) 0 var(--space-6)" }}>
+          Open a report from your assessment history.
+        </p>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate("/assessments")}>
+          Go to history
+        </button>
+      </AppShell>
     );
   }
 
+  const factors = assessment.explanation || [];
+
   return (
-    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        
-        {/* Navigation & Header Actions */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-medium text-sm transition"
-          >
-            <ArrowLeft size={16} /> Back to Dashboard
-          </button>
+    <AppShell user={user}>
+      <header style={{ marginBottom: "var(--space-8)" }}>
+        <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
+          <span className="num">{assessment.id}</span> · {assessment.created_at || "Recent"}
+        </p>
+        <h1 style={{ fontSize: "var(--text-2xl)", marginTop: "var(--space-2)" }}>
+          {assessment.business_name || "Assessment report"}
+        </h1>
+      </header>
 
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition"
-          >
-            <Download size={16} /> Download Verified Report
-          </button>
-        </div>
+      <section aria-labelledby="score-heading">
+        <h2 id="score-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>
+          Credit score
+        </h2>
+        <RiskScale score={assessment.credit_score} riskCategory={assessment.risk_category} />
+      </section>
 
-        {/* The Enhanced Gauge & Metadata Card */}
-        <AssessmentResultsCard assessment={assessment} />
+      <hr className="rule" />
 
-        {/* Business Profile & SHAP Explanation Breakdown Section */}
-        <div className="bg-white rounded-xl shadow-lg border border-slate-100 p-6 space-y-6">
-          <div>
-            <h3 className="text-lg font-bold text-slate-800">Business Profile Summary</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3 text-sm">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <span className="text-slate-400 block text-xs">Enterprise</span>
-                <span className="font-semibold text-slate-700">{assessment.business_name || "Baraka Hardware"}</span>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <span className="text-slate-400 block text-xs">Sector</span>
-                <span className="font-semibold text-slate-700">{assessment.sector || "Retail"}</span>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <span className="text-slate-400 block text-xs">County</span>
-                <span className="font-semibold text-slate-700">{assessment.county || "Nairobi"}</span>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <span className="text-slate-400 block text-xs">Monthly Revenue</span>
-                <span className="font-semibold text-slate-700">KES {assessment.monthly_revenue_kes?.toLocaleString() || "450,000"}</span>
-              </div>
-            </div>
-          </div>
+      <section aria-labelledby="facts-heading">
+        <h2 id="facts-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>
+          Business details
+        </h2>
+        <dl
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "var(--space-6)",
+            margin: 0,
+          }}
+        >
+          <Fact label="Sector" value={assessment.sector || "Not recorded"} />
+          <Fact label="County" value={assessment.county || "Not recorded"} />
+          <Fact label="Monthly revenue" value={kes(assessment.monthly_revenue)} />
+          <Fact label="Recommended limit" value={kes(assessment.recommended_limit)} />
+        </dl>
+      </section>
 
-          <div className="pt-4 border-t border-slate-100">
-            <h3 className="text-lg font-bold text-slate-800 mb-2">Key Decision Factors (SHAP Explanations)</h3>
-            <p className="text-xs text-slate-500 mb-4">Key business indicators that determined your current score and borrowing capacity:</p>
-            
-            <div className="space-y-2.5">
-              {assessment.explanation?.map((exp, index) => {
-                const isPositive = exp.startsWith("Positive");
-                return (
-                  <div 
-                    key={index} 
-                    className={`p-3.5 rounded-lg text-sm border flex items-start gap-3 ${
-                      isPositive 
-                        ? 'bg-emerald-50/50 border-emerald-100 text-emerald-900' 
-                        : 'bg-amber-50/50 border-amber-100 text-amber-900'
-                    }`}
-                  >
-                    <span className="font-medium">{exp}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      <hr className="rule" />
 
-      </div>
+      <section aria-labelledby="factors-heading">
+        <h2 id="factors-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-2)" }}>
+          What shaped this result
+        </h2>
+        <p style={{ color: "var(--ink-2)", marginBottom: "var(--space-4)" }}>
+          Each factor shows whether it helped or hurt the score. Sizes are not shown because the explanations do not include them.
+        </p>
+        {factors.length ? (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {factors.map((item, i) => {
+              const f = parseFactor(item);
+              return (
+                <li key={i} style={{ padding: "var(--space-3) 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
+                  {f.reduces !== null && (
+                    <span
+                      style={{
+                        fontSize: "var(--text-xs)",
+                        fontWeight: 600,
+                        marginRight: "var(--space-3)",
+                        color: f.reduces ? "var(--risk-low)" : "var(--risk-high)",
+                      }}
+                    >
+                      {f.reduces ? "Helped" : "Hurt"}
+                    </span>
+                  )}
+                  {f.text}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p style={{ color: "var(--ink-2)" }}>No factor breakdown was recorded for this assessment.</p>
+        )}
+      </section>
+
+      <hr className="rule" />
+
+      <footer style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn btn-secondary" onClick={() => window.print()}>
+          Print report
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => navigate("/assessments")}>
+          Back to history
+        </button>
+        <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", flexBasis: "100%", marginTop: "var(--space-4)" }}>
+          This assessment supports credit evaluation. It does not approve or issue a loan.
+        </p>
+      </footer>
+    </AppShell>
+  );
+}
+
+function Fact({ label, value }) {
+  return (
+    <div>
+      <dt style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{label}</dt>
+      <dd className="num" style={{ margin: "var(--space-1) 0 0", fontWeight: 600 }}>
+        {value}
+      </dd>
     </div>
   );
 }
