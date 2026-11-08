@@ -1,4 +1,4 @@
-const BASE = "http://127.0.0.1:8000/api";
+export const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
 
 export async function signup(data) {
   const res = await fetch(`${BASE}/auth/signup/`, {
@@ -107,4 +107,26 @@ export async function fetchAssessmentDetail(id) {
   });
   if (!res.ok) throw new Error("Failed to load assessment");
   return res.json();
+}
+
+export async function updateMe(data) {
+  const res = await fetch(`${BASE}/auth/me/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(data),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || "Your personal details could not be saved.");
+  return body;
+}
+
+export async function saveBusinessProfile(data) {
+  const res = await fetch(`${BASE}/scoring/business-profile/`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(data),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || JSON.stringify(body) || "Your business details could not be saved.");
+  return body;
 }

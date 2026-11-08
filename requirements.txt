@@ -24,3 +24,6 @@ threadpoolctl==3.7.0
 tqdm==4.70.1
 tzdata==2026.5
 xgboost==3.4.1
+
+gunicorn
+whitenoise

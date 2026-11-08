@@ -46,7 +46,7 @@ export default function AnalystLayout({ title, subtitle, user, children, actions
         <div>
           <div className="px-6 py-6 border-b border-white/5 flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-white text-black flex items-center justify-center font-bold text-lg shadow-md">
-              MS
+              BS
             </div>
             <div>
               <h2 className="text-white font-bold text-base leading-tight tracking-tight">

@@ -3,6 +3,7 @@ from .views import (
     SubmitCreditAssessmentView, 
     AssessmentListView, 
     AllAssessmentsAnalystView,
+    BusinessProfileView
     # AssessmentDetailView # (If you have this)
 )
 
@@ -13,4 +14,5 @@ urlpatterns = [
     # Other endpoints...
     path("assessments/", AssessmentListView.as_view(), name="assessment_list"),
     path("assessments/all/", AllAssessmentsAnalystView.as_view(), name="analyst_assessment_list"),
+    path("business-profile/", BusinessProfileView.as_view(), name="business_profile"),
 ]

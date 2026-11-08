@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from .models import CreditRequest, CreditAssessment, BusinessProfile
-from .serializers import CreditRequestSerializer, CreditAssessmentSerializer
+from .serializers import CreditRequestSerializer, CreditAssessmentSerializer, BusinessProfileSerializer
 from .services import evaluate_credit_request
 
 class IsAnalystOrAdmin(IsAuthenticated):
@@ -114,6 +114,24 @@ class SubmitCreditAssessmentView(APIView):
             "explanation": assessment.shap_explanation,
             "created_at": assessment.created_at.strftime("%b %d, %Y"),
         }, status=status.HTTP_201_CREATED)
+
+class BusinessProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _current(self, request):
+        return BusinessProfile.objects.filter(user=request.user).order_by("-created_at").first()
+
+    def get(self, request):
+        profile = self._current(request)
+        return Response(BusinessProfileSerializer(profile).data if profile else {})
+
+    def put(self, request):
+        profile = self._current(request)
+        serializer = BusinessProfileSerializer(profile, data=request.data, partial=True) if profile \
+            else BusinessProfileSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(user=request.user)
+        return Response(serializer.data)    
 
 class AllAssessmentsAnalystView(APIView):
     permission_classes = [IsAnalystOrAdmin]

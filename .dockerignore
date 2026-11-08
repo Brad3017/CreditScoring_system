@@ -1,0 +1,12 @@
+venv
+.venv
+frontend
+.git
+__pycache__
+*.pyc
+.env
+backend
+db.sqlite3
+staticfiles
+*.ipynb
+*.csv
