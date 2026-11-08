@@ -1,56 +1,140 @@
-from rest_framework import status, generics
+from django.utils import timezone
+from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from .models import CreditRequest, CreditAssessment, BusinessProfile
-from .serializers import CreditRequestSerializer, CreditAssessmentSerializer, BusinessProfileSerializer
+from .serializers import (
+    CreditRequestSerializer,
+    CreditAssessmentSerializer,
+    BusinessProfileSerializer,
+)
 from .services import evaluate_credit_request
+
 
 class IsAnalystOrAdmin(IsAuthenticated):
     """Only analysts and admins can access the review queue."""
+
     def has_permission(self, request, view):
         if not super().has_permission(request, view):
             return False
         return request.user.role in ("analyst", "admin")
 
 
+def _reviewer_name(a):
+    if not a.reviewed_by:
+        return None
+    return a.reviewed_by.full_name or a.reviewed_by.email
+
+
+def _payload(a, detailed=False):
+    """One consistent JSON shape for an assessment, used by every endpoint."""
+    r = a.request
+    data = {
+        "pk": a.id,
+        "id": f"ASSESS-{a.id}",
+        "business_name": r.business_name,
+        "sector": r.sector,
+        "county": r.county,
+        "monthly_revenue": float(r.monthly_revenue_kes),
+        "credit_score": a.credit_score,
+        "probability_of_default": float(a.probability_of_default),
+        "risk_category": a.risk_category,
+        "recommended_limit": float(a.recommended_limit),
+        "explanation": a.shap_explanation,
+        "created_at": a.created_at.strftime("%b %d, %Y"),
+        "created_at_iso": a.created_at.isoformat(),
+        "review_status": a.review_status,
+        "review_note": a.review_note,
+        "reviewed_by": _reviewer_name(a),
+        "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+    }
+    if detailed:
+        data["applicant"] = {
+            "name": r.user.full_name or r.user.email,
+            "email": r.user.email,
+            "phone": getattr(r.user, "phone", ""),
+        }
+        data["request"] = {
+            "loan_amount": float(r.loan_amount),
+            "tenure_months": r.tenure_months,
+            "monthly_profit_kes": float(r.monthly_profit_kes),
+            "days_payable_outstanding": r.days_payable_outstanding,
+            "cashflow_stability": r.cashflow_stability,
+            "existing_loans": r.existing_loans,
+            "prior_loan_count": r.prior_loan_count,
+            "late_payment_history": r.late_payment_history,
+            "collateral_level": r.collateral_level,
+            "repayment_confidence": r.repayment_confidence,
+            "owner_education": r.owner_education,
+            "legal_status": r.legal_status,
+            "location_type": r.location_type,
+            "business_age_years": r.business_age_years,
+            "employees_count": r.employees_count,
+        }
+    return data
+
+
 class AssessmentListView(APIView):
-   permission_classes = [IsAuthenticated]
+    """The logged-in borrower's own assessments (now including review status)."""
+    permission_classes = [IsAuthenticated]
 
-   def get(self, request):
-        assessments = CreditAssessment.objects.filter(
-            request__user=request.user
-        ).select_related("request").order_by("-created_at")
+    def get(self, request):
+        qs = (
+            CreditAssessment.objects.filter(request__user=request.user)
+            .select_related("request", "reviewed_by")
+            .order_by("-created_at")
+        )
+        return Response([_payload(a) for a in qs], status=status.HTTP_200_OK)
 
-        results = []
-        for a in assessments:
-            results.append({
-                "id": f"ASSESS-{a.id}",
-                "business_name": a.request.business_name,
-                "sector": a.request.sector,
-                "county": a.request.county,
-                "monthly_revenue": float(a.request.monthly_revenue_kes),
-                "credit_score": a.credit_score,
-                "risk_category": a.risk_category,
-                "recommended_limit": float(a.recommended_limit),
-                "explanation": a.shap_explanation,
-                "created_at": a.created_at.strftime("%b %d, %Y")
-            })
-        return Response(results, status=status.HTTP_200_OK)
 
 class AssessmentDetailView(APIView):
-    """View a single assessment in full detail."""
+    """Full detail of one assessment, for analysts and admins."""
     permission_classes = [IsAnalystOrAdmin]
 
     def get(self, request, pk):
         try:
-            assessment = CreditAssessment.objects.select_related(
-                "request", "request__business", "request__user"
+            a = CreditAssessment.objects.select_related(
+                "request", "request__user", "reviewed_by"
             ).get(pk=pk)
         except CreditAssessment.DoesNotExist:
             return Response({"detail": "Not found"}, status=404)
-        return Response(CreditAssessmentSerializer(assessment).data)
+        return Response(_payload(a, detailed=True))
+
+
+class ReviewAssessmentView(APIView):
+    """Analyst records a decision: approved, declined or referred."""
+    permission_classes = [IsAnalystOrAdmin]
+
+    ALLOWED = {"approved", "declined", "referred"}
+
+    def post(self, request, pk):
+        try:
+            a = CreditAssessment.objects.select_related("request", "request__user").get(pk=pk)
+        except CreditAssessment.DoesNotExist:
+            return Response({"detail": "Not found"}, status=404)
+
+        decision = request.data.get("decision")
+        note = (request.data.get("note") or "").strip()
+
+        if decision not in self.ALLOWED:
+            return Response(
+                {"detail": "decision must be approved, declined or referred."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if decision in ("declined", "referred") and len(note) < 5:
+            return Response(
+                {"detail": "Please add a short note explaining a decline or referral."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        a.review_status = decision
+        a.review_note = note
+        a.reviewed_by = request.user
+        a.reviewed_at = timezone.now()
+        a.save(update_fields=["review_status", "review_note", "reviewed_by", "reviewed_at"])
+        return Response(_payload(a, detailed=True))
 
 
 class SubmitCreditAssessmentView(APIView):
@@ -61,10 +145,8 @@ class SubmitCreditAssessmentView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # 1. Save CreditRequest linked to the logged-in user
         credit_req = serializer.save(user=request.user)
 
-        # 2. Maintain or link a BusinessProfile record
         business_profile, _ = BusinessProfile.objects.get_or_create(
             user=request.user,
             defaults={
@@ -80,7 +162,6 @@ class SubmitCreditAssessmentView(APIView):
         credit_req.business = business_profile
         credit_req.save()
 
-        # 3. Trigger model scoring & SHAP
         try:
             results = evaluate_credit_request(credit_req)
         except Exception as e:
@@ -89,7 +170,6 @@ class SubmitCreditAssessmentView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # 4. Save assessment record
         assessment = CreditAssessment.objects.create(
             request=credit_req,
             credit_score=results["credit_score"],
@@ -99,21 +179,20 @@ class SubmitCreditAssessmentView(APIView):
             shap_explanation=results["shap_explanation"],
             model_version="xgb_msme_v1",
         )
+        return Response(_payload(assessment), status=status.HTTP_201_CREATED)
 
-        # 5. Return JSON payload
-        return Response({
-            "id": f"ASSESS-{assessment.id}",
-            "business_name": credit_req.business_name,
-            "sector": credit_req.sector,
-            "county": credit_req.county,
-            "monthly_revenue": float(credit_req.monthly_revenue_kes),
-            "credit_score": assessment.credit_score,
-            "probability_of_default": float(assessment.probability_of_default),
-            "risk_category": assessment.risk_category,
-            "recommended_limit": float(assessment.recommended_limit),
-            "explanation": assessment.shap_explanation,
-            "created_at": assessment.created_at.strftime("%b %d, %Y"),
-        }, status=status.HTTP_201_CREATED)
+
+class AllAssessmentsAnalystView(APIView):
+    permission_classes = [IsAnalystOrAdmin]
+
+    def get(self, request):
+        qs = CreditAssessment.objects.select_related(
+            "request", "reviewed_by"
+        ).order_by("-created_at")
+        return Response([_payload(a) for a in qs], status=status.HTTP_200_OK)
+
+
+# ---- BusinessProfileView here unchanged ----
 
 class BusinessProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -132,25 +211,3 @@ class BusinessProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save(user=request.user)
         return Response(serializer.data)    
-
-class AllAssessmentsAnalystView(APIView):
-    permission_classes = [IsAnalystOrAdmin]
-
-    def get(self, request):
-        assessments = CreditAssessment.objects.select_related("request").order_by("-created_at")
-        results = []
-        for a in assessments:
-            results.append({
-                "id": f"ASSESS-{a.id}",
-                "business_name": a.request.business_name,
-                "sector": a.request.sector,
-                "county": a.request.county,
-                "monthly_revenue": float(a.request.monthly_revenue_kes),
-                "credit_score": a.credit_score,
-                "probability_of_default": float(a.probability_of_default),
-                "risk_category": a.risk_category,
-                "recommended_limit": float(a.recommended_limit),
-                "explanation": a.shap_explanation,
-                "created_at": a.created_at.strftime("%b %d, %Y")
-            })
-        return Response(results, status=status.HTTP_200_OK)                  
