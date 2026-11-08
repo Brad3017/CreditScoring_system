@@ -87,13 +87,17 @@ class CreditAssessment(models.Model):
     RISK_CHOICES = [
         ("Low Risk", "Low Risk"),
         ("Moderate Risk", "Moderate Risk"),
-        ("High Risk", "High Risk")
+        ("High Risk", "High Risk"),
+    ]
+    REVIEW_STATUS_CHOICES = [
+        ("pending", "Pending review"),
+        ("approved", "Approved"),
+        ("declined", "Declined"),
+        ("referred", "Referred for more information"),
     ]
 
     request = models.OneToOneField(
-        CreditRequest,
-        on_delete=models.CASCADE,
-        related_name="assessment"
+        CreditRequest, on_delete=models.CASCADE, related_name="assessment"
     )
     probability_of_default = models.DecimalField(max_digits=5, decimal_places=4)
     credit_score = models.IntegerField()
@@ -102,6 +106,20 @@ class CreditAssessment(models.Model):
     shap_explanation = models.JSONField(default=list)
     model_version = models.CharField(max_length=50, default="xgb_msme_v1")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # ---- Analyst review (new) ----
+    review_status = models.CharField(
+        max_length=10, choices=REVIEW_STATUS_CHOICES, default="pending", db_index=True
+    )
+    review_note = models.TextField(blank=True, default="")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_assessments",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Assessment #{self.id} - Score: {self.credit_score} ({self.risk_category})"
