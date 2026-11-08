@@ -28,7 +28,7 @@ export default function Login() {
       if (data.role === "analyst") {
         navigate("/analyst");
       } else if (data.role === "admin") {
-        navigate("/admin");
+        navigate("/console");
       } else {
         navigate("/home");
       }

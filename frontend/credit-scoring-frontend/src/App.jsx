@@ -13,7 +13,7 @@ import AssessmentRequests from "./pages/analyst/AssessmentRequests";
 import RiskAnalytics from "./pages/analyst/RiskAnalytics";
 import ReviewHistory from "./pages/analyst/ReviewHistory";
 import AssessmentReview from "./pages/analyst/AssessmentReview";
-import { getToken } from "./lib/api";
+import { getToken, getRole } from "./lib/api";
 import AdminOverview from "./pages/admin/AdminOverview";
 import AdminModel from "./pages/admin/AdminModel";
 import AdminFairness from "./pages/admin/AdminFairness";
@@ -51,6 +51,11 @@ export default function App() {
         <Route path="/analyst/msmes" element={<AnalystOnly><MsmeRecords /></AnalystOnly>} />
         <Route path="/analyst/analytics" element={<AnalystOnly><RiskAnalytics /></AnalystOnly>} />
         <Route path="/analyst/reviews" element={<AnalystOnly><ReviewHistory /></AnalystOnly>} />
+
+        <Route path="/console" element={<AdminOnly><AdminOverview /></AdminOnly>} />
+        <Route path="/console/model" element={<AdminOnly><AdminModel /></AdminOnly>} />
+        <Route path="/console/fairness" element={<AdminOnly><AdminFairness /></AdminOnly>} />
+        <Route path="/console/users" element={<AdminOnly><AdminUsers /></AdminOnly>} />
 
         
         <Route
