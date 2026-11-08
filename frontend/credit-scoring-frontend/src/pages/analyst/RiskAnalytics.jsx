@@ -1,174 +1,136 @@
 import { useState, useEffect, useMemo } from "react";
 import AnalystLayout from "../../components/AnalystLayout";
+import { ChartCard, BarList, Columns, Split, Empty } from "../../components/charts";
 import { fetchMe, fetchAllAssessments } from "../../lib/api";
-import { CheckCircle2, Inbox } from "lucide-react";
+
+const RISKS = [
+  { key: "Low Risk", label: "Low risk", color: "var(--risk-low)" },
+  { key: "Moderate Risk", label: "Moderate risk", color: "var(--risk-moderate)" },
+  { key: "High Risk", label: "High risk", color: "var(--risk-high)" },
+];
+const SCORE_BINS = [300, 400, 500, 600, 700, 800]; // last bin is 800–850
+const pct = (n, d) => (d ? Math.round((100 * n) / d) : 0);
+
+function groupBy(rows, key) {
+  const out = new Map();
+  for (const r of rows) {
+    const k = r[key] || "Not recorded";
+    const g = out.get(k) || { label: k, total: 0, high: 0, scoreSum: 0 };
+    g.total += 1;
+    g.scoreSum += r.credit_score || 0;
+    if (r.risk_category === "High Risk") g.high += 1;
+    out.set(k, g);
+  }
+  return [...out.values()].sort((a, b) => b.total - a.total);
+}
 
 export default function RiskAnalytics() {
   const [user, setUser] = useState(null);
-  const [assessments, setAssessments] = useState([]);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    (async () => {
       try {
-        const [me, allData] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
         setUser(me);
-        setAssessments(Array.isArray(allData) ? allData : []);
+        setRows(Array.isArray(all) ? all : []);
+      } catch (e) {
+        setError(e.message || "Could not load assessments.");
       } finally {
         setLoading(false);
       }
-    }
-    load();
+    })();
   }, []);
 
-  const total = assessments.length;
+  const total = rows.length;
 
-  const low = assessments.filter((a) => (a.risk_category || "").toLowerCase().includes("low")).length;
-  const med = assessments.filter(
-    (a) =>
-      (a.risk_category || "").toLowerCase().includes("moderate") ||
-      (a.risk_category || "").toLowerCase().includes("medium")
-  ).length;
-  const high = assessments.filter((a) => (a.risk_category || "").toLowerCase().includes("high")).length;
+  const risk = useMemo(
+    () => RISKS.map((r) => ({ ...r, value: rows.filter((a) => a.risk_category === r.key).length })),
+    [rows]
+  );
 
-  const lowPct = total > 0 ? Math.round((low / total) * 100) : 0;
-  const medPct = total > 0 ? Math.round((med / total) * 100) : 0;
-  const highPct = total > 0 ? Math.round((high / total) * 100) : 0;
+  const scoreDist = useMemo(
+    () =>
+      SCORE_BINS.map((lo, i) => {
+        const hi = SCORE_BINS[i + 1] ?? 851;
+        return { label: `${lo}–${Math.min(hi - 1, 850)}`, value: rows.filter((a) => a.credit_score >= lo && a.credit_score < hi).length };
+      }),
+    [rows]
+  );
 
-  // Sector distribution breakdown
-  const sectorCounts = useMemo(() => {
-    const counts = { Retail: 0, Agriculture: 0, Services: 0, Other: 0 };
-    assessments.forEach((a) => {
-      const s = a.sector || "Other";
-      if (counts[s] !== undefined) counts[s]++;
-      else counts.Other++;
-    });
-    return counts;
-  }, [assessments]);
+  const monthly = useMemo(() => {
+    const m = new Map();
+    for (const a of rows) {
+      if (!a.created_at_iso) continue;
+      const d = new Date(a.created_at_iso);
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const g = m.get(k) || { key: k, label: d.toLocaleString("en-KE", { month: "short", year: "2-digit" }), value: 0, sum: 0 };
+      g.value += 1;
+      g.sum += a.credit_score || 0;
+      m.set(k, g);
+    }
+    return [...m.values()].sort((a, b) => a.key.localeCompare(b.key)).slice(-12);
+  }, [rows]);
+
+  const bySector = useMemo(() => groupBy(rows, "sector"), [rows]);
+  const byCounty = useMemo(() => groupBy(rows, "county").slice(0, 10), [rows]);
+  const avgScore = total ? Math.round(rows.reduce((s, a) => s + (a.credit_score || 0), 0) / total) : 0;
+  const reviewed = rows.filter((a) => a.reviewed_at).length;
 
   return (
-    <AnalystLayout
-      title="Risk Analytics"
-      subtitle="Explore risk trends and insights across MSME assessments."
-      user={user}
-    >
+    <AnalystLayout title="Risk analytics" subtitle="Risk across every assessment the model has scored." user={user}>
+      {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
+
       {loading ? (
-        <div className="min-h-[400px] flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-        </div>
+        <p style={{ color: "var(--ink-2)" }}>Loading…</p>
       ) : total === 0 ? (
-        <div className="max-w-2xl mx-auto my-16 bg-white rounded-3xl p-10 border border-slate-200/80 text-center">
-          <Inbox size={32} className="mx-auto mb-4 text-slate-400" />
-          <h2 className="text-lg font-bold text-slate-900">No Risk Analytics Available</h2>
-          <p className="text-xs text-slate-500 mt-1">Analytics charts generate automatically when assessments are completed.</p>
-        </div>
+        <ChartCard title="No assessments yet"><Empty>Charts appear once applicants have been scored.</Empty></ChartCard>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 1. RISK DISTRIBUTION */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-            <h3 className="text-sm font-bold text-slate-900 mb-4">Risk Distribution</h3>
-            <div className="flex items-center justify-around my-auto">
-              <div className="relative flex items-center justify-center">
-                <svg className="w-32 h-32 transform -rotate-90">
-                  <circle cx="64" cy="64" r="44" stroke="#F1F5F9" strokeWidth="11" fill="none" />
-                  <circle
-                    cx="64"
-                    cy="64"
-                    r="44"
-                    stroke="#10B981"
-                    strokeWidth="11"
-                    strokeDasharray="276"
-                    strokeDashoffset={276 - (lowPct / 100) * 276}
-                    strokeLinecap="round"
-                    fill="none"
-                  />
-                </svg>
-                <div className="absolute text-center">
-                  <span className="text-xl font-extrabold text-slate-900 block leading-tight">{total}</span>
-                  <span className="text-[10px] text-slate-400 font-semibold uppercase">Total</span>
-                </div>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-                  <span className="text-slate-600">Low Risk:</span>
-                  <strong className="text-slate-900">{low} ({lowPct}%)</strong>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-amber-400"></span>
-                  <span className="text-slate-600">Medium Risk:</span>
-                  <strong className="text-slate-900">{med} ({medPct}%)</strong>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-rose-500"></span>
-                  <span className="text-slate-600">High Risk:</span>
-                  <strong className="text-slate-900">{high} ({highPct}%)</strong>
-                </div>
-              </div>
-            </div>
-          </div>
+        <>
+          <ChartCard
+            title="Risk mix"
+            subtitle={`${total} assessments · average score ${avgScore} · ${reviewed} reviewed (${pct(reviewed, total)}%)`}
+            table={{ head: ["Risk band", "Assessments", "Share"], rows: risk.map((r) => [r.label, r.value, `${pct(r.value, total)}%`]) }}
+          >
+            <Split parts={risk} />
+          </ChartCard>
 
-          {/* 2. CREDIT SCORE TREND */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-            <h3 className="text-sm font-bold text-slate-900 mb-4">Credit Score Trend</h3>
-            <div className="h-44 flex items-end gap-3 px-2 border-b border-slate-100 pb-2">
-              {assessments.slice(-6).map((item, idx) => {
-                const score = item.credit_score || 300;
-                const heightPct = Math.max(15, Math.round(((score - 300) / (850 - 300)) * 100));
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                    <span className="text-[10px] font-bold text-slate-900">{score}</span>
-                    <div
-                      className="w-full bg-black rounded-t-lg transition-all duration-500"
-                      style={{ height: `${heightPct}%` }}
-                    ></div>
-                    <span className="text-[9px] text-slate-400 truncate max-w-[50px]">
-                      {item.created_at || `#${idx + 1}`}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: "var(--space-6)" }}>
+            <ChartCard
+              title="Score distribution"
+              subtitle="Number of assessments in each score band"
+              table={{ head: ["Score band", "Assessments"], rows: scoreDist.map((d) => [d.label, d.value]) }}
+            >
+              <Columns data={scoreDist} />
+            </ChartCard>
 
-          {/* 3. KEY INSIGHTS */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-3 text-xs">
-            <h3 className="text-sm font-bold text-slate-900 mb-2">Key Insights</h3>
-            <div className="flex items-start gap-2.5 text-slate-700">
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
-              <span>{lowPct}% of processed MSME borrowers meet low-risk creditworthiness criteria.</span>
-            </div>
-            <div className="flex items-start gap-2.5 text-slate-700">
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
-              <span>High-risk default flags account for {highPct}% of all evaluated requests.</span>
-            </div>
-            <div className="flex items-start gap-2.5 text-slate-700">
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
-              <span>Evaluated through XGBoost MSME Scoring Model v1 with explainable SHAP weights.</span>
-            </div>
-          </div>
+            <ChartCard
+              title="Assessments per month"
+              subtitle="Last 12 months with activity"
+              table={{ head: ["Month", "Assessments", "Average score"], rows: monthly.map((m) => [m.label, m.value, Math.round(m.sum / m.value)]) }}
+            >
+              <Columns data={monthly} />
+            </ChartCard>
 
-          {/* 4. RISK BY SECTOR */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-            <h3 className="text-sm font-bold text-slate-900 mb-4">Risk by Sector</h3>
-            <div className="h-36 flex items-end gap-6 px-4 pb-2 border-b border-slate-100">
-              {Object.entries(sectorCounts).map(([sector, count]) => {
-                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-                return (
-                  <div key={sector} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
-                    <span className="text-[10px] font-bold text-slate-700">{pct}%</span>
-                    <div
-                      className="w-full bg-slate-900 rounded-t-lg transition-all duration-500"
-                      style={{ height: `${Math.max(12, pct)}%` }}
-                    ></div>
-                    <span className="text-[10px] text-slate-500 font-semibold">{sector}</span>
-                  </div>
-                );
-              })}
-            </div>
+            <ChartCard
+              title="High-risk share by sector"
+              subtitle="Percentage of each sector's assessments rated high risk"
+              table={{ head: ["Sector", "Assessments", "High risk", "Average score"], rows: bySector.map((g) => [g.label, g.total, `${g.high} (${pct(g.high, g.total)}%)`, Math.round(g.scoreSum / g.total)]) }}
+            >
+              <BarList rows={bySector.map((g) => ({ label: g.label, value: pct(g.high, g.total) }))} format={(v) => `${v}%`} max={100} color="var(--risk-high)" />
+            </ChartCard>
+
+            <ChartCard
+              title="Assessments by county"
+              subtitle={byCounty.length === 10 ? "Ten busiest counties" : "All counties with applicants"}
+              table={{ head: ["County", "Assessments", "High risk", "Average score"], rows: byCounty.map((g) => [g.label, g.total, `${g.high} (${pct(g.high, g.total)}%)`, Math.round(g.scoreSum / g.total)]) }}
+            >
+              <BarList rows={byCounty.map((g) => ({ label: g.label, value: g.total }))} />
+            </ChartCard>
           </div>
-        </div>
+        </>
       )}
     </AnalystLayout>
   );

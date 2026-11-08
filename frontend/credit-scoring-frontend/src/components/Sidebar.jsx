@@ -21,6 +21,13 @@ const css = `
   .sb-side{flex-direction:column}
   .sb-main{overflow:visible}
 }
+@media print{
+  .sb-root{display:block;height:auto}
+  .sb-side,.sb-main header button{display:none}
+  .sb-main{overflow:visible}
+  .sb-main header{position:static}
+  section{break-inside:avoid}
+}
 `;
 
 export default function Sidebar({ title, subtitle, user, actions, children, nav, extras, roleLabel, brandNote }) {

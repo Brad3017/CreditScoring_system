@@ -1,23 +1,84 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
-import RiskScale, { riskKeyFromCategory } from "../components/RiskScale";
+import StatusPill from "../components/StatusPill";
+import { Columns } from "../components/charts";
+import { riskKeyFromCategory } from "../components/RiskScale";
 import { fetchMe, fetchMyAssessments } from "../lib/api";
 
 const kes = (n) => (n == null || Number.isNaN(n) ? "Not recorded" : `KES ${Math.round(n).toLocaleString("en-KE")}`);
+const RISK_LABEL = { low: "Low risk", moderate: "Moderate risk", high: "High risk" };
+const RISK_TOKEN = { low: "--risk-low", moderate: "--risk-moderate", high: "--risk-high" };
+const shortDate = (s = "") => s.split(",")[0] || s;
 
-const BANDS = [
-  { key: "low", label: "Low risk", token: "--risk-low" },
-  { key: "moderate", label: "Moderate risk", token: "--risk-moderate" },
-  { key: "high", label: "High risk", token: "--risk-high" },
-];
-
+// "Caution: Days Payable Outstanding elevated ..." -> { name, helped }
 function parseFactor(text = "") {
-  const m = text.match(/^(Positive|Caution):\s*(.*)$/i);
-  if (!m) return { reduces: null, text };
-  return { reduces: m[1].toLowerCase() === "positive", text: m[2] };
+  const s = String(text);
+  const caution = s.match(/^Caution:\s*(.+?)\s+elevated/i);
+  if (caution) return { name: caution[1], helped: false };
+  const positive = s.match(/^Positive:\s*Strong\s+(.+?)\s+(?:supported|contributed)/i);
+  if (positive) return { name: positive[1], helped: true };
+  return null;
+}
+
+function Stat({ label, children, hint }) {
+  return (
+    <div className="panel" style={{ padding: "var(--space-5)" }}>
+      <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{label}</div>
+      <div style={{ marginTop: "var(--space-2)" }}>{children}</div>
+      {hint && <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{hint}</div>}
+    </div>
+  );
+}
+
+const big = { fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)", lineHeight: 1.1 };
+
+// Line chart of score per assessment, drawn over the three risk bands.
+function ScoreTrend({ points }) {
+  const W = 640, H = 250, L = 44, R = 20, T = 16, B = 34;
+  const y = (v) => T + ((850 - v) / 550) * (H - T - B);
+  const x = (i) => (points.length === 1 ? (L + W - R) / 2 : L + (i / (points.length - 1)) * (W - L - R));
+  const bands = [
+    { from: 700, to: 850, fill: "var(--risk-low-soft)" },
+    { from: 500, to: 700, fill: "var(--risk-moderate-soft)" },
+    { from: 300, to: 500, fill: "var(--risk-high-soft)" },
+  ];
+  const path = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.score)}`).join(" ");
+  const labelEvery = Math.ceil(points.length / 6);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
+      aria-label={`Credit score for each assessment: ${points.map((p) => `${p.label} ${p.score}`).join(", ")}`}
+      style={{ display: "block", maxHeight: 300 }}>
+      {bands.map((b) => (
+        <rect key={b.from} x={L} y={y(b.to)} width={W - L - R} height={y(b.from) - y(b.to)} fill={b.fill} opacity="0.7" />
+      ))}
+      {[300, 500, 700, 850].map((t) => (
+        <g key={t}>
+          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="var(--line-strong)" strokeWidth="1" />
+          <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--ink-2)">{t}</text>
+        </g>
+      ))}
+      {points.length > 1 && <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+      {points.map((p, i) => (
+        <g key={p.id}>
+          <circle cx={x(i)} cy={y(p.score)} r="5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2">
+            <title>{`${p.label}: ${p.score}`}</title>
+          </circle>
+          {i === points.length - 1 && (
+            <text x={x(i)} y={y(p.score) - 12} textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--ink)">{p.score}</text>
+          )}
+          {(i % labelEvery === 0 || i === points.length - 1) && (
+            <text x={x(i)} y={H - 10} textAnchor="middle" fontSize="11" fill="var(--ink-2)">{p.label}</text>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
 }
 
 export default function Analytics() {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +86,7 @@ export default function Analytics() {
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    (async () => {
       try {
         const [me, list] = await Promise.all([fetchMe(), fetchMyAssessments()]);
         if (cancelled) return;
@@ -36,162 +97,154 @@ export default function Analytics() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  // The API returns newest first. Charts read left to right, oldest to newest.
-  const chronological = useMemo(() => [...assessments].reverse(), [assessments]);
+  const chrono = useMemo(() => [...assessments].reverse(), [assessments]);
   const latest = assessments[0] || null;
+  const previous = assessments[1] || null;
+  const delta = latest && previous ? latest.credit_score - previous.credit_score : null;
+  const risk = latest ? riskKeyFromCategory(latest.risk_category) : null;
 
-  const revenues = assessments.map((a) => Number(a.monthly_revenue)).filter((n) => Number.isFinite(n) && n > 0);
-  const avgRevenue = revenues.length ? revenues.reduce((s, n) => s + n, 0) / revenues.length : null;
+  const points = chrono.map((a) => ({ id: a.id, score: a.credit_score, label: shortDate(a.created_at) }));
 
-  const counts = useMemo(() => {
-    const c = { low: 0, moderate: 0, high: 0 };
+  // How often each factor held the score back or helped, across all assessments.
+  const factors = useMemo(() => {
+    const map = new Map();
     assessments.forEach((a) => {
-      const k = riskKeyFromCategory(a.risk_category);
-      if (k) c[k] += 1;
+      (a.explanation || []).forEach((t) => {
+        const f = parseFactor(t);
+        if (!f) return;
+        const row = map.get(f.name) || { name: f.name, hurt: 0, helped: 0 };
+        f.helped ? row.helped++ : row.hurt++;
+        map.set(f.name, row);
+      });
     });
-    return c;
+    return [...map.values()].sort((a, b) => b.hurt - a.hurt || b.helped - a.helped);
   }, [assessments]);
 
-  const scored = assessments.filter((a) => typeof a.credit_score === "number");
+  const revenueCols = chrono.map((a) => ({ label: shortDate(a.created_at), value: Math.round(Number(a.monthly_revenue) || 0) }));
 
   return (
     <AppShell user={user}>
-      <h1 style={{ fontSize: "var(--text-2xl)" }}>Analytics</h1>
-      <p style={{ color: "var(--ink-2)", margin: "var(--space-2) 0 var(--space-8)" }}>
-        How your assessments have changed over time.
-      </p>
+      <div className="stack">
+        <header>
+          <h1 style={{ fontSize: "var(--text-2xl)" }}>Your credit picture</h1>
+          <p style={{ color: "var(--ink-2)", margin: "var(--space-2) 0 0" }}>
+            How your score has moved, and what keeps shaping it.
+          </p>
+        </header>
 
-      {loading && <p style={{ color: "var(--ink-2)" }}>Loading…</p>}
-      {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
+        {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
+        {loading && <p style={{ color: "var(--ink-2)" }}>Loading your analytics…</p>}
 
-      {!loading && !error && assessments.length === 0 && (
-        <p>Analytics appear after your first assessment.</p>
-      )}
-
-      {!loading && assessments.length > 0 && (
-        <>
-          <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "var(--space-6)", margin: 0 }}>
-            <Fact label="Assessments" value={assessments.length} />
-            <Fact label="Average monthly revenue" value={kes(avgRevenue)} />
-            <Fact label="Latest recommended limit" value={kes(Number(latest?.recommended_limit))} />
-          </dl>
-
-          <hr className="rule" />
-
-          <section aria-labelledby="trend-heading">
-            <h2 id="trend-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-2)" }}>Credit score over time</h2>
-            <p style={{ color: "var(--ink-2)", marginBottom: "var(--space-4)" }}>
-              Each point is one assessment, from oldest to newest. The scale runs from 300 to 850.
+        {!loading && !error && !latest && (
+          <section className="panel">
+            <h2 className="panel-title">No assessments yet</h2>
+            <p style={{ color: "var(--ink-2)", marginTop: 0 }}>
+              Once you run an assessment, your score history and the factors behind it appear here.
             </p>
-            {scored.length > 1 ? (
-              <ScoreLine points={chronological.filter((a) => typeof a.credit_score === "number").map((a) => a.credit_score)} />
-            ) : (
-              <p style={{ color: "var(--ink-2)" }}>Run a second assessment to see a trend.</p>
-            )}
-            {latest && (
-              <div style={{ marginTop: "var(--space-6)" }}>
-                <RiskScale score={latest.credit_score} riskCategory={latest.risk_category} />
-              </div>
-            )}
+            <button type="button" className="btn btn-primary" onClick={() => navigate("/assessment/new")}>Start an assessment</button>
           </section>
+        )}
 
-          <hr className="rule" />
+        {latest && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "var(--space-6)" }}>
+              <Stat
+                label="Latest score"
+                hint={delta == null ? "First assessment" : delta === 0 ? "No change since the last one" : `${delta > 0 ? "Up" : "Down"} ${Math.abs(delta)} since the last one`}
+              >
+                <span className="num" style={big}>{latest.credit_score}</span>
+                <span style={{ color: "var(--ink-2)" }}> / 850</span>
+              </Stat>
+              <Stat label="Risk category" hint={`${assessments.length} assessment${assessments.length === 1 ? "" : "s"} in total`}>
+                <span style={{ ...big, color: risk ? `var(${RISK_TOKEN[risk]})` : "inherit" }}>{risk ? RISK_LABEL[risk] : "–"}</span>
+              </Stat>
+              <Stat label="Recommended limit" hint={Number(latest.recommended_limit) ? "From your latest assessment" : "None recommended for the latest result"}>
+                <span className="num" style={big}>{Number(latest.recommended_limit) ? kes(latest.recommended_limit) : "None"}</span>
+              </Stat>
+              <Stat label="Analyst review" hint="Latest assessment">
+                <StatusPill status={latest.review_status || "pending"} />
+              </Stat>
+            </div>
 
-          <section aria-labelledby="mix-heading">
-            <h2 id="mix-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Risk bands</h2>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: "var(--space-3)" }}>
-              {BANDS.map((b) => {
-                const n = counts[b.key];
-                const pct = assessments.length ? (n / assessments.length) * 100 : 0;
-                return (
-                  <li key={b.key} style={{ display: "grid", gridTemplateColumns: "140px 1fr 48px", gap: "var(--space-3)", alignItems: "center" }}>
-                    <span>{b.label}</span>
-                    <span style={{ height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }} aria-hidden="true">
-                      <span style={{ display: "block", height: "100%", width: `${pct}%`, background: `var(${b.token})` }} />
-                    </span>
-                    <span className="num" style={{ textAlign: "right" }}>{n}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-
-          <hr className="rule" />
-
-          <section aria-labelledby="revenue-heading">
-            <h2 id="revenue-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Revenue reported</h2>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              {chronological.map((a, i) => (
-                <li key={a.id || i} style={{ display: "flex", justifyContent: "space-between", padding: "var(--space-3) 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
-                  <span>{a.created_at || "Recent"}</span>
-                  <span className="num">{kes(Number(a.monthly_revenue))}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {latest?.explanation?.length > 0 && (
-            <>
-              <hr className="rule" />
-              <section aria-labelledby="factors-heading">
-                <h2 id="factors-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Factors in your latest result</h2>
-                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                  {latest.explanation.map((item, i) => {
-                    const f = parseFactor(item);
-                    return (
-                      <li key={i} style={{ padding: "var(--space-3) 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
-                        {f.reduces !== null && (
-                          <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, marginRight: "var(--space-3)", color: f.reduces ? "var(--risk-low)" : "var(--risk-high)" }}>
-                            {f.reduces ? "Helped" : "Hurt"}
-                          </span>
-                        )}
-                        {f.text}
-                      </li>
-                    );
-                  })}
-                </ul>
+            <div className="split">
+              <section className="panel" aria-labelledby="trend-heading">
+                <h2 id="trend-heading" className="panel-title">Score over time</h2>
+                <ScoreTrend points={points} />
+                <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: "var(--space-3) 0 0" }}>
+                  {points.length < 2
+                    ? "Run a second assessment to see a trend. Each point is one assessment."
+                    : "Each point is one assessment. Shading shows the high, moderate and low risk bands."}
+                </p>
               </section>
-            </>
-          )}
-        </>
-      )}
+
+              <section className="panel" aria-labelledby="factors-heading">
+                <h2 id="factors-heading" className="panel-title">What shapes your score</h2>
+                {factors.length === 0 ? (
+                  <p style={{ color: "var(--ink-2)", margin: 0 }}>No factor details were recorded yet.</p>
+                ) : (
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "var(--space-3)" }}>
+                    {factors.slice(0, 6).map((f) => (
+                      <li key={f.name} style={{ display: "flex", justifyContent: "space-between", gap: "var(--space-4)", paddingBottom: "var(--space-3)", borderBottom: "1px solid var(--line)" }}>
+                        <span style={{ fontWeight: 600 }}>{f.name}</span>
+                        <span style={{ fontSize: "var(--text-xs)", textAlign: "right" }}>
+                          {f.hurt > 0 && <span style={{ color: "var(--risk-high)", fontWeight: 600 }}>Held back {f.hurt} of {assessments.length}</span>}
+                          {f.hurt > 0 && f.helped > 0 && <span style={{ color: "var(--ink-2)" }}> · </span>}
+                          {f.helped > 0 && <span style={{ color: "var(--risk-low)", fontWeight: 600 }}>Helped {f.helped} of {assessments.length}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: "var(--space-4) 0 0" }}>
+                  Counts how often each factor was among the top three influences on a result.
+                </p>
+              </section>
+            </div>
+
+            <section className="panel" aria-labelledby="revenue-heading">
+              <h2 id="revenue-heading" className="panel-title">Monthly revenue you reported</h2>
+              <Columns data={revenueCols} />
+              <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: "var(--space-3) 0 0" }}>
+                Revenue as entered on each assessment, in KES.
+              </p>
+            </section>
+
+            <section className="panel" aria-labelledby="all-heading">
+              <h2 id="all-heading" className="panel-title">All assessments</h2>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      {["Date", "Score", "Risk", "Recommended limit", "Review"].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "var(--space-3)", fontSize: "var(--text-xs)", color: "var(--ink-2)", borderBottom: "1px solid var(--line-strong)" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assessments.map((a) => {
+                      const k = riskKeyFromCategory(a.risk_category);
+                      const cell = { padding: "var(--space-3)", borderBottom: "1px solid var(--line)" };
+                      return (
+                        <tr key={a.id}>
+                          <td style={cell}>{a.created_at}</td>
+                          <td style={cell} className="num"><strong>{a.credit_score}</strong></td>
+                          <td style={{ ...cell, color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
+                          <td style={cell} className="num">{Number(a.recommended_limit) ? kes(a.recommended_limit) : "None"}</td>
+                          <td style={cell}><StatusPill status={a.review_status || "pending"} /></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+      </div>
     </AppShell>
-  );
-}
-
-// Plain SVG line through the real scores. Scale is fixed at 300–850 so changes look as large as they are.
-function ScoreLine({ points }) {
-  const W = 600;
-  const H = 160;
-  const pad = 12;
-  const xStep = points.length > 1 ? (W - pad * 2) / (points.length - 1) : 0;
-  const y = (s) => pad + (1 - (Math.max(300, Math.min(850, s)) - 300) / 550) * (H - pad * 2);
-  const path = points.map((s, i) => `${i === 0 ? "M" : "L"}${pad + i * xStep},${y(s)}`).join(" ");
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Credit scores: ${points.join(", ")}`} style={{ width: "100%", maxWidth: 640, height: "auto" }}>
-      <line x1={pad} x2={W - pad} y1={y(700)} y2={y(700)} stroke="var(--line)" strokeDasharray="4 4" />
-      <line x1={pad} x2={W - pad} y1={y(500)} y2={y(500)} stroke="var(--line)" strokeDasharray="4 4" />
-      <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" />
-      {points.map((s, i) => (
-        <circle key={i} cx={pad + i * xStep} cy={y(s)} r="4" fill="var(--surface)" stroke="var(--accent)" strokeWidth="2" />
-      ))}
-    </svg>
-  );
-}
-
-function Fact({ label, value }) {
-  return (
-    <div>
-      <dt style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{label}</dt>
-      <dd className="num" style={{ margin: "var(--space-1) 0 0", fontWeight: 600, fontSize: "var(--text-lg)" }}>{value}</dd>
-    </div>
   );
 }

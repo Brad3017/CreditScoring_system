@@ -21,8 +21,14 @@ import AdminUsers from "./pages/admin/AdminUsers";
 
 
 
-function Private({ children }) {
-  return getToken() ? children : <Navigate to="/login" replace />;
+// Where each role lands when it opens a page meant for another role.
+const HOME_FOR = { admin: "/console", analyst: "/analyst" };
+
+// Borrower pages. Staff are sent to their own area instead.
+function OwnerOnly({ children }) {
+  if (!getToken()) return <Navigate to="/login" replace />;
+  const staffHome = HOME_FOR[getRole()];
+  return staffHome ? <Navigate to={staffHome} replace /> : children;
 }
 function AnalystOnly({ children }) {
   if (!getToken()) return <Navigate to="/login" replace />;
@@ -61,50 +67,50 @@ export default function App() {
         <Route
           path="/home"
           element={
-            <Private>
+            <OwnerOnly>
               <Home />
-            </Private>
+            </OwnerOnly>
           }
         />
         <Route
           path="/assessment/new"
           element={
-            <Private>
+            <OwnerOnly>
               <NewAssessment />
-            </Private>
+            </OwnerOnly>
           }
         />
         <Route
           path="/assessments"
           element={
-            <Private>
+            <OwnerOnly>
               <MyAssessments />
-            </Private>
+            </OwnerOnly>
           }
         />
 
         <Route
           path="/profile"
           element={
-            <Private>
+            <OwnerOnly>
               <BusinessProfilePage />
-            </Private>
+            </OwnerOnly>
           }
         />
         <Route
           path="/analytics"
           element={
-            <Private>
+            <OwnerOnly>
               <Analytics />
-            </Private>
+            </OwnerOnly>
           }
         />
         <Route
           path="/assessment/results"
           element={
-            <Private>
+            <OwnerOnly>
               <AssessmentResultPage />
-            </Private>
+            </OwnerOnly>
           }
         />
       </Routes>

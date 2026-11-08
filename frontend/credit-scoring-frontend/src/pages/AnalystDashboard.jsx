@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../components/AnalystLayout";
+import StatusPill from "../components/StatusPill";
 import { riskKeyFromCategory } from "../components/RiskScale";
 import { fetchMe, fetchAllAssessments } from "../lib/api";
 
@@ -277,7 +278,7 @@ export default function AnalystDashboard() {
                 <tbody>
                   {assessments.slice(0, 5).map((row, idx) => {
                     const key = riskKeyFromCategory(row.risk_category);
-                    const isLow = key === "low";
+                    const isDone = row.review_status && row.review_status !== "pending";
                     const cell = { padding: "var(--space-4) var(--space-6)", borderBottom: "1px solid var(--line)", verticalAlign: "middle" };
                     return (
                       <tr key={row.id || idx}>
@@ -298,18 +299,16 @@ export default function AnalystDashboard() {
                           )}
                         </td>
                         <td style={cell}>
-                          <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: isLow ? "var(--risk-low)" : "var(--ink-2)" }}>
-                            {isLow ? "Reviewed" : "Pending review"}
-                          </span>
+                          <StatusPill status={row.review_status} />
                         </td>
                         <td style={{ ...cell, textAlign: "right" }}>
                           <button
                             type="button"
                             className="btn btn-secondary"
                             style={{ padding: "var(--space-1) var(--space-4)", fontSize: "var(--text-xs)" }}
-                            onClick={() => navigate("/assessment/results", { state: { assessment: row } })}
+                            onClick={() => navigate(`/analyst/requests/${row.pk}`)}
                           >
-                            {isLow ? "View" : "Review"}
+                            {isDone ? "View" : "Review"}
                           </button>
                         </td>
                       </tr>

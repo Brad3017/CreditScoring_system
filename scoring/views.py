@@ -22,6 +22,15 @@ class IsAnalystOrAdmin(IsAuthenticated):
         return request.user.role in ("analyst", "admin")
 
 
+class IsOwner(IsAuthenticated):
+    """Only business owners apply for credit; staff accounts cannot submit applications."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return request.user.role == "owner"
+
+
 def _reviewer_name(a):
     if not a.reviewed_by:
         return None
@@ -138,7 +147,7 @@ class ReviewAssessmentView(APIView):
 
 
 class SubmitCreditAssessmentView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsOwner]
 
     def post(self, request):
         serializer = CreditRequestSerializer(data=request.data)

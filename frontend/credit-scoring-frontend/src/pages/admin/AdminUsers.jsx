@@ -1,85 +1,121 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import AdminLayout from "../../components/AdminLayout";
-import { card, cardHead, cardTitle, muted, inputStyle, th, td } from "../../components/analystUi";
-import { fetchMe, fetchAdminFairness } from "../../lib/api";
+import { card, muted, inputStyle, th, td, fmtDateTime } from "../../components/analystUi";
+import { fetchMe, fetchAdminUsers, updateAdminUser } from "../../lib/api";
 
-const pct = (v) => (v == null ? "–" : `${v}%`);
+const ROLES = [["owner", "MSME owner"], ["analyst", "Credit analyst"], ["admin", "Administrator"]];
 
-export default function AdminFairness() {
-  const [user, setUser] = useState(null);
-  const [d, setD] = useState(null);
+export default function AdminUsers() {
+  const [me, setMe] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
+  const [role, setRole] = useState("all");
+  const [savingId, setSavingId] = useState(null);
 
-  useEffect(() => { fetchMe().then(setUser).catch(() => {}); }, []);
   useEffect(() => {
-    setError("");
-    fetchAdminFairness({ date_from: from, date_to: to }).then(setD).catch((e) => setError(e.message));
-  }, [from, to]);
+    fetchMe().then(setMe).catch(() => {});
+    fetchAdminUsers().then(setUsers).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  }, []);
+
+  async function change(u, changes, message) {
+    setError(""); setNotice(""); setSavingId(u.id);
+    try {
+      const updated = await updateAdminUser(u.id, changes);
+      setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, ...updated, is_you: x.is_you } : x)));
+      setNotice(message);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  function onRole(u, next) {
+    if (next === u.role) return;
+    const label = ROLES.find(([k]) => k === next)[1];
+    if (window.confirm(`Change ${u.email} to ${label}? They will see a different part of the system after their next login.`)) {
+      change(u, { role: next }, `${u.email} is now ${label}.`);
+    }
+  }
+
+  function onActive(u) {
+    const next = !u.is_active;
+    if (!next && !window.confirm(`Deactivate ${u.email}? They will not be able to log in.`)) return;
+    change(u, { is_active: next }, `${u.email} ${next ? "reactivated" : "deactivated"}.`);
+  }
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return users.filter((u) =>
+      (role === "all" || u.role === role) &&
+      (!q || `${u.email} ${u.full_name}`.toLowerCase().includes(q))
+    );
+  }, [users, query, role]);
 
   return (
-    <AdminLayout title="Fairness check" subtitle="Do outcomes differ across sectors, counties and business types?" user={user}>
+    <AdminLayout title="Users" subtitle="Provision analysts and manage who can sign in." user={me}>
       {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
+      {notice && <p role="status" style={{ color: "var(--risk-low)" }}>{notice}</p>}
 
-      <section style={{ ...card, background: "var(--accent-soft)" }}>
-        <p style={{ margin: 0 }}>
-          This page compares results across groups. A gap is a reason to look closer, not proof of bias: groups can
-          differ for legitimate reasons, such as real differences in cash flow. Groups with fewer than{" "}
-          <span className="num">{d?.min_group ?? 5}</span> assessments are shown but not compared. With synthetic
-          or small data, treat every figure here as an illustration of the method.
-        </p>
-      </section>
+      <section style={card}>
+        <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-5)" }}>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or email" aria-label="Search users" style={{ ...inputStyle, minWidth: 240 }} />
+          <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Filter by role" style={inputStyle}>
+            <option value="all">All roles</option>
+            {ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <span style={{ ...muted, alignSelf: "center", marginLeft: "auto" }}>{visible.length} of {users.length} users</span>
+        </div>
 
-      <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap", alignItems: "end" }}>
-        <label style={{ display: "grid", gap: 4 }}><span style={muted}>From</span>
-          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={inputStyle} /></label>
-        <label style={{ display: "grid", gap: 4 }}><span style={muted}>To</span>
-          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={inputStyle} /></label>
-        {d && <span style={muted}>Overall high-risk share: <span className="num" style={{ fontWeight: 600 }}>{pct(d.overall_high_risk_rate)}</span> across <span className="num">{d.total}</span> assessments</span>}
-      </div>
-
-      {!d && !error && <p style={{ color: "var(--ink-2)" }}>Loading…</p>}
-      {d && d.total === 0 && <section style={card}><p style={{ margin: 0, color: "var(--ink-2)" }}>No assessments in this period yet.</p></section>}
-
-      {d && d.total > 0 && d.dimensions.map((dim) => (
-        <section key={dim.field} style={card}>
-          <div style={cardHead}>
-            <h2 style={cardTitle}>{dim.label}</h2>
-            <span style={muted}>
-              {dim.gap == null
-                ? "Not enough large groups to compare"
-                : <>Gap in high-risk share: <span className="num" style={{ fontWeight: 600 }}>{dim.gap} points</span></>}
-            </span>
-          </div>
+        {loading ? <p style={{ color: "var(--ink-2)" }}>Loading…</p> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={th}>Group</th><th style={th}>Assessments</th><th style={th}>Average score</th>
-                  <th style={th}>High-risk share</th><th style={th}>Approved, of decided</th>
+                  <th style={th}>User</th><th style={th}>Role</th><th style={th}>Assessments</th>
+                  <th style={th}>Last login</th><th style={th}>Account</th>
                 </tr>
               </thead>
               <tbody>
-                {dim.groups.map((g) => (
-                  <tr key={g.name} style={{ color: g.comparable ? "inherit" : "var(--ink-2)" }}>
-                    <td style={td}>{g.name}{!g.comparable && <span style={{ ...muted, marginLeft: 8 }}>too few to compare</span>}</td>
-                    <td style={td} className="num">{g.count}</td>
-                    <td style={td} className="num">{g.avg_score}</td>
+                {visible.map((u) => (
+                  <tr key={u.id} style={{ opacity: u.is_active ? 1 : 0.6 }}>
                     <td style={td}>
-                      <span className="num" style={{ display: "inline-block", minWidth: 48 }}>{pct(g.high_risk_rate)}</span>
-                      <span aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", width: 90, height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
-                        <span style={{ display: "block", height: "100%", width: `${g.high_risk_rate || 0}%`, background: "var(--accent)" }} />
-                      </span>
+                      <div style={{ fontWeight: 600 }}>{u.full_name || u.email}{u.is_you && <span style={{ ...muted, marginLeft: 8 }}>you</span>}</div>
+                      {u.full_name && <div style={muted}>{u.email}</div>}
                     </td>
-                    <td style={td} className="num">{g.decided ? `${pct(g.approval_rate)} (${g.decided})` : "No decisions yet"}</td>
+                    <td style={td}>
+                      <select
+                        value={u.role}
+                        disabled={u.is_you || savingId === u.id}
+                        onChange={(e) => onRole(u, e.target.value)}
+                        aria-label={`Role for ${u.email}`}
+                        style={inputStyle}
+                      >
+                        {ROLES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </td>
+                    <td style={td} className="num">{u.assessments}</td>
+                    <td style={td}>{u.last_login ? fmtDateTime(u.last_login) : "Never"}</td>
+                    <td style={td}>
+                      <button type="button" className="btn btn-secondary" disabled={u.is_you || savingId === u.id} onClick={() => onActive(u)}>
+                        {u.is_active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
+                {!visible.length && <tr><td style={td} colSpan={5}>No users match.</td></tr>}
               </tbody>
             </table>
           </div>
-        </section>
-      ))}
+        )}
+        <p style={{ ...muted, marginBottom: 0 }}>
+          You cannot change your own role or deactivate yourself, so you cannot lock yourself out.
+          Role changes take effect the next time that person logs in.
+        </p>
+      </section>
     </AdminLayout>
   );
 }

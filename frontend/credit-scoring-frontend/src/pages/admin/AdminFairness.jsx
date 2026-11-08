@@ -1,159 +1,85 @@
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
-import { ChartCard, BarList, Columns, Split, Empty } from "../../components/charts";
-import { card, muted, inputStyle } from "../../components/analystUi";
-import { fetchMe, fetchAdminOverview, downloadAssessmentsCsv } from "../../lib/api";
+import { card, cardHead, cardTitle, muted, inputStyle, th, td } from "../../components/analystUi";
+import { fetchMe, fetchAdminFairness } from "../../lib/api";
 
-function Kpi({ label, value, hint }) {
-  return (
-    <div style={{ ...card, padding: "var(--space-5)" }}>
-      <div style={muted}>{label}</div>
-      <div className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)", lineHeight: 1.1, marginTop: "var(--space-2)" }}>
-        {value}
-      </div>
-      {hint && <div style={{ ...muted, marginTop: "var(--space-1)" }}>{hint}</div>}
-    </div>
-  );
-}
+const pct = (v) => (v == null ? "–" : `${v}%`);
 
-export default function AdminOverview() {
+export default function AdminFairness() {
   const [user, setUser] = useState(null);
-  const [data, setData] = useState(null);
+  const [d, setD] = useState(null);
   const [error, setError] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => { fetchMe().then(setUser).catch(() => {}); }, []);
-
   useEffect(() => {
     setError("");
-    fetchAdminOverview({ date_from: from, date_to: to })
-      .then(setData)
-      .catch((e) => setError(e.message));
+    fetchAdminFairness({ date_from: from, date_to: to }).then(setD).catch((e) => setError(e.message));
   }, [from, to]);
 
-  async function exportCsv() {
-    setBusy(true);
-    try { await downloadAssessmentsCsv({ date_from: from, date_to: to }); }
-    catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  }
-
-  const d = data;
-  const hasData = d && d.total > 0;
-  const pct = (v) => (v == null ? "–" : `${v}%`);
-
   return (
-    <AdminLayout
-      title="Overview"
-      subtitle="What the system has scored, and how reviews are going."
-      user={user}
-      actions={
-        <button type="button" className="btn btn-secondary" onClick={exportCsv} disabled={busy || !hasData}>
-          {busy ? "Preparing…" : "Export CSV"}
-        </button>
-      }
-    >
+    <AdminLayout title="Fairness check" subtitle="Do outcomes differ across sectors, counties and business types?" user={user}>
       {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
 
+      <section style={{ ...card, background: "var(--accent-soft)" }}>
+        <p style={{ margin: 0 }}>
+          This page compares results across groups. A gap is a reason to look closer, not proof of bias: groups can
+          differ for legitimate reasons, such as real differences in cash flow. Groups with fewer than{" "}
+          <span className="num">{d?.min_group ?? 5}</span> assessments are shown but not compared. With synthetic
+          or small data, treat every figure here as an illustration of the method.
+        </p>
+      </section>
+
       <div style={{ display: "flex", gap: "var(--space-4)", flexWrap: "wrap", alignItems: "end" }}>
-        <label style={{ display: "grid", gap: 4 }}>
-          <span style={muted}>From</span>
-          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={inputStyle} />
-        </label>
-        <label style={{ display: "grid", gap: 4 }}>
-          <span style={muted}>To</span>
-          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={inputStyle} />
-        </label>
-        {(from || to) && (
-          <button type="button" className="btn btn-secondary" onClick={() => { setFrom(""); setTo(""); }}>Clear dates</button>
-        )}
+        <label style={{ display: "grid", gap: 4 }}><span style={muted}>From</span>
+          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={inputStyle} /></label>
+        <label style={{ display: "grid", gap: 4 }}><span style={muted}>To</span>
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={inputStyle} /></label>
+        {d && <span style={muted}>Overall high-risk share: <span className="num" style={{ fontWeight: 600 }}>{pct(d.overall_high_risk_rate)}</span> across <span className="num">{d.total}</span> assessments</span>}
       </div>
 
       {!d && !error && <p style={{ color: "var(--ink-2)" }}>Loading…</p>}
+      {d && d.total === 0 && <section style={card}><p style={{ margin: 0, color: "var(--ink-2)" }}>No assessments in this period yet.</p></section>}
 
-      {d && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "var(--space-6)" }}>
-            <Kpi label="Assessments" value={d.total} hint={from || to ? "In the selected period" : "All time"} />
-            <Kpi label="Average score" value={d.avg_score ?? "–"} hint="Scale 300 to 850" />
-            <Kpi label="High-risk share" value={pct(d.high_risk_rate)} hint="Of assessments scored" />
-            <Kpi label="Awaiting review" value={d.awaiting_review} hint="Not yet decided by an analyst" />
+      {d && d.total > 0 && d.dimensions.map((dim) => (
+        <section key={dim.field} style={card}>
+          <div style={cardHead}>
+            <h2 style={cardTitle}>{dim.label}</h2>
+            <span style={muted}>
+              {dim.gap == null
+                ? "Not enough large groups to compare"
+                : <>Gap in high-risk share: <span className="num" style={{ fontWeight: 600 }}>{dim.gap} points</span></>}
+            </span>
           </div>
-
-          {!hasData ? (
-            <section style={card}><Empty>No assessments in this period yet.</Empty></section>
-          ) : (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "var(--space-6)" }}>
-                <ChartCard
-                  title="Risk categories"
-                  subtitle="How the model sorted applicants"
-                  table={{ head: ["Category", "Count"], rows: Object.entries(d.risk).map(([k, v]) => [k, v]) }}
-                >
-                  <Split parts={[
-                    { label: "Low risk", value: d.risk["Low Risk"], color: "var(--risk-low)" },
-                    { label: "Moderate", value: d.risk["Moderate Risk"], color: "var(--risk-moderate)" },
-                    { label: "High risk", value: d.risk["High Risk"], color: "var(--risk-high)" },
-                  ]} />
-                </ChartCard>
-
-                <ChartCard
-                  title="Analyst decisions"
-                  subtitle="Where each assessment stands"
-                  table={{ head: ["Status", "Count"], rows: Object.entries(d.review).map(([k, v]) => [k, v]) }}
-                >
-                  <Split parts={[
-                    { label: "Pending", value: d.review.pending, color: "var(--ink-2)" },
-                    { label: "Approved", value: d.review.approved, color: "var(--risk-low)" },
-                    { label: "Needs info", value: d.review.referred, color: "var(--risk-moderate)" },
-                    { label: "Declined", value: d.review.declined, color: "var(--risk-high)" },
-                  ]} />
-                </ChartCard>
-              </div>
-
-              <ChartCard
-                title="Score distribution"
-                subtitle="Number of assessments in each 50-point band"
-                table={{ head: ["Score band", "Count"], rows: d.score_bins.map((b) => [`${b.from}–${b.to}`, b.count]) }}
-              >
-                <Columns data={d.score_bins.map((b) => ({ label: String(b.from), value: b.count }))} />
-              </ChartCard>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "var(--space-6)" }}>
-                <ChartCard
-                  title="Assessments by sector"
-                  table={{ head: ["Sector", "Count", "Average score"], rows: d.sectors.map((s) => [s.name, s.count, s.avg_score]) }}
-                >
-                  <BarList rows={d.sectors.map((s) => ({ label: s.name, value: s.count }))} />
-                </ChartCard>
-                <ChartCard
-                  title="Assessments by county"
-                  subtitle="Ten busiest counties"
-                  table={{ head: ["County", "Count", "Average score"], rows: d.counties.map((s) => [s.name, s.count, s.avg_score]) }}
-                >
-                  <BarList rows={d.counties.map((s) => ({ label: s.name, value: s.count }))} />
-                </ChartCard>
-              </div>
-
-              <ChartCard
-                title="Assessments per month"
-                table={{ head: ["Month", "Count"], rows: d.monthly.map((m) => [m.month, m.count]) }}
-              >
-                <Columns data={d.monthly.map((m) => ({ label: m.month.slice(2), value: m.count }))} />
-              </ChartCard>
-            </>
-          )}
-
-          <section style={card}>
-            <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>Accounts</h2>
-            <p style={{ margin: "var(--space-2) 0 0", color: "var(--ink-2)" }}>
-              <span className="num">{d.users.owner}</span> MSME owners · <span className="num">{d.users.analyst}</span> credit analysts · <span className="num">{d.users.admin}</span> administrators
-            </p>
-          </section>
-        </>
-      )}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Group</th><th style={th}>Assessments</th><th style={th}>Average score</th>
+                  <th style={th}>High-risk share</th><th style={th}>Approved, of decided</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dim.groups.map((g) => (
+                  <tr key={g.name} style={{ color: g.comparable ? "inherit" : "var(--ink-2)" }}>
+                    <td style={td}>{g.name}{!g.comparable && <span style={{ ...muted, marginLeft: 8 }}>too few to compare</span>}</td>
+                    <td style={td} className="num">{g.count}</td>
+                    <td style={td} className="num">{g.avg_score}</td>
+                    <td style={td}>
+                      <span className="num" style={{ display: "inline-block", minWidth: 48 }}>{pct(g.high_risk_rate)}</span>
+                      <span aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", width: 90, height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
+                        <span style={{ display: "block", height: "100%", width: `${g.high_risk_rate || 0}%`, background: "var(--accent)" }} />
+                      </span>
+                    </td>
+                    <td style={td} className="num">{g.decided ? `${pct(g.approval_rate)} (${g.decided})` : "No decisions yet"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </AdminLayout>
   );
 }
