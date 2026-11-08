@@ -12,11 +12,17 @@ import MsmeRecords from "./pages/analyst/MsmeRecords";
 import AssessmentRequests from "./pages/analyst/AssessmentRequests";
 import RiskAnalytics from "./pages/analyst/RiskAnalytics";
 import ReviewHistory from "./pages/analyst/ReviewHistory";
+import AssessmentReview from "./pages/analyst/AssessmentReview";
 import { getToken } from "./lib/api";
 
 
 function Private({ children }) {
   return getToken() ? children : <Navigate to="/login" replace />;
+}
+function AnalystOnly({ children }) {
+  if (!getToken()) return <Navigate to="/login" replace />;
+  const role = getRole();
+  return role === "analyst" || role === "admin" ? children : <Navigate to="/home" replace />;
 }
 
 export default function App() {
@@ -26,13 +32,15 @@ export default function App() {
         <Route path="/" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/analyst" element={<AnalystDashboard />} />
-        <Route path="/analyst/requests" element={<Private><AssessmentRequests /></Private>} />
-        <Route path="/analyst/msmes" element={<Private><MsmeRecords /></Private>} />
-        <Route path="/analyst/analytics" element={<Private><RiskAnalytics /></Private>} />
-        <Route path="/analyst/reviews" element={<Private><ReviewHistory /></Private>} />
 
-       
+        <Route path="/analyst" element={<AnalystOnly><AnalystDashboard /></AnalystOnly>} />
+        <Route path="/analyst/requests" element={<AnalystOnly><AssessmentRequests /></AnalystOnly>} />
+        <Route path="/analyst/requests/:pk" element={<AnalystOnly><AssessmentReview /></AnalystOnly>} />
+        <Route path="/analyst/msmes" element={<AnalystOnly><MsmeRecords /></AnalystOnly>} />
+        <Route path="/analyst/analytics" element={<AnalystOnly><RiskAnalytics /></AnalystOnly>} />
+        <Route path="/analyst/reviews" element={<AnalystOnly><ReviewHistory /></AnalystOnly>} />
+
+        
         <Route
           path="/home"
           element={

@@ -1,84 +1,88 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../../components/AnalystLayout";
+import StatusPill from "../../components/StatusPill";
+import { card, muted, inputStyle, th, td, fmtDateTime } from "../../components/analystUi";
 import { fetchMe, fetchAllAssessments } from "../../lib/api";
-import { Inbox } from "lucide-react";
 
 export default function ReviewHistory() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [assessments, setAssessments] = useState([]);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [decision, setDecision] = useState("all");
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    (async () => {
       try {
-        const [me, allData] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
         setUser(me);
-        setAssessments(Array.isArray(allData) ? allData : []);
+        setRows((Array.isArray(all) ? all : []).filter((r) => r.reviewed_at));
+      } catch (e) {
+        setError(e.message || "Could not load review history.");
       } finally {
         setLoading(false);
       }
-    }
-    load();
+    })();
   }, []);
 
+  const visible = useMemo(
+    () =>
+      rows
+        .filter((r) => decision === "all" || r.review_status === decision)
+        .sort((x, y) => new Date(y.reviewed_at) - new Date(x.reviewed_at)),
+    [rows, decision]
+  );
+
   return (
-    <AnalystLayout
-      title="Review History"
-      subtitle="View your past assessment reviews and analyst notes."
-      user={user}
-    >
-      {loading ? (
-        <div className="min-h-[400px] flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
+    <AnalystLayout title="Review history" subtitle="Every decision recorded, newest first." user={user}>
+      {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
+      <section style={card}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--space-5)" }}>
+          <span style={muted}>{visible.length} decision{visible.length === 1 ? "" : "s"}</span>
+          <select value={decision} onChange={(e) => setDecision(e.target.value)} aria-label="Filter by decision" style={inputStyle}>
+            <option value="all">All decisions</option>
+            <option value="approved">Approved</option>
+            <option value="declined">Declined</option>
+            <option value="referred">Needs more info</option>
+          </select>
         </div>
-      ) : assessments.length === 0 ? (
-        <div className="max-w-2xl mx-auto my-16 bg-white rounded-3xl p-10 border border-slate-200/80 text-center">
-          <Inbox size={32} className="mx-auto mb-4 text-slate-400" />
-          <h2 className="text-lg font-bold text-slate-900">No Review History Found</h2>
-          <p className="text-xs text-slate-500 mt-1">Logged underwriting reviews will be archived here.</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50/75 border-b border-slate-100 text-slate-400 uppercase text-[10px] tracking-wider font-semibold">
-              <tr>
-                <th className="py-3.5 px-6">Assessment ID</th>
-                <th className="py-3.5 px-6">MSME Name</th>
-                <th className="py-3.5 px-6">Date Reviewed</th>
-                <th className="py-3.5 px-6">Analyst Notes</th>
-                <th className="py-3.5 px-6 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {assessments.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-4 px-6 font-mono text-slate-500">{row.id}</td>
-                  <td className="py-4 px-6 font-semibold text-slate-900">{row.business_name}</td>
-                  <td className="py-4 px-6 text-slate-600">{row.created_at || "Recent"}</td>
-                  <td className="py-4 px-6 text-slate-500 max-w-xs truncate">
-                    {Array.isArray(row.explanation) && row.explanation.length > 0
-                      ? row.explanation[0]
-                      : "Verified under standard scoring policies."}
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <button
-                      onClick={() =>
-                        navigate("/assessment/results", { state: { assessment: row } })
-                      }
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-all shadow-xs"
-                    >
-                      View
-                    </button>
-                  </td>
+
+        {loading ? (
+          <p style={{ color: "var(--ink-2)" }}>Loading…</p>
+        ) : visible.length === 0 ? (
+          <p style={{ color: "var(--ink-2)" }}>No decisions recorded yet. Reviews you complete will appear here.</p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={th}>Business</th><th style={th}>Decision</th><th style={th}>Note</th>
+                  <th style={th}>Reviewed by</th><th style={th}>When</th><th style={th}></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {visible.map((r) => (
+                  <tr key={r.pk}>
+                    <td style={td}>
+                      <div style={{ fontWeight: 600 }}>{r.business_name || "Business not named"}</div>
+                      <div style={muted}><span className="num">{r.id}</span> · score <span className="num">{r.credit_score}</span></div>
+                    </td>
+                    <td style={td}><StatusPill status={r.review_status} /></td>
+                    <td style={{ ...td, maxWidth: 320, color: "var(--ink-2)" }}>{r.review_note || "No note"}</td>
+                    <td style={td}>{r.reviewed_by || "–"}</td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDateTime(r.reviewed_at)}</td>
+                    <td style={{ ...td, textAlign: "right" }}>
+                      <button type="button" className="btn btn-secondary" onClick={() => navigate(`/analyst/requests/${r.pk}`)}>Open</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </AnalystLayout>
   );
 }

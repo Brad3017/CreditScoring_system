@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { riskKeyFromCategory } from "../components/RiskScale";
+import StatusPill from "../components/StatusPill";
 import { fetchMe, fetchMyAssessments } from "../lib/api";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -167,6 +168,9 @@ export default function MyAssessments() {
                       </div>
                       <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
                         <span className="num">{item.id}</span> · {item.created_at || "Recent"}
+                      </div>
+                      <div style={{ marginTop: "var(--space-2)" }}>
+                        <StatusPill status={item.review_status || "pending"} />
                       </div>
                     </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import RiskScale from "../components/RiskScale";
+import StatusPill from "../components/StatusPill";
 import { fetchMe } from "../lib/api";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -54,6 +55,28 @@ export default function AssessmentResultPage() {
           Credit score
         </h2>
         <RiskScale score={assessment.credit_score} riskCategory={assessment.risk_category} />
+      </section>
+
+      <hr className="rule" />
+
+      <section aria-labelledby="review-heading">
+        <h2 id="review-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>
+          Analyst review
+        </h2>
+        <p style={{ margin: "0 0 var(--space-3)" }}>
+          <StatusPill status={assessment.review_status || "pending"} />
+        </p>
+        {assessment.review_note ? (
+          <p style={{ margin: 0 }}>
+            <strong>Note from {assessment.reviewed_by || "the analyst"}:</strong> {assessment.review_note}
+          </p>
+        ) : (
+          <p style={{ margin: 0, color: "var(--ink-2)" }}>
+            {(assessment.review_status || "pending") === "pending"
+              ? "A credit analyst has not reviewed this result yet. The score is a model estimate, not a loan decision."
+              : "No note was left with this decision."}
+          </p>
+        )}
       </section>
 
       <hr className="rule" />
