@@ -1,177 +1,125 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../../components/AnalystLayout";
+import StatusPill from "../../components/StatusPill";
+import { riskKeyFromCategory } from "../../components/RiskScale";
+import { card, muted, inputStyle, th, td } from "../../components/analystUi";
 import { fetchMe, fetchAllAssessments } from "../../lib/api";
-import { FileText, Clock, CheckCircle2, Download, Inbox } from "lucide-react";
+
+const RISK_LABEL = { low: "Low risk", moderate: "Moderate", high: "High risk" };
+const RISK_TOKEN = { low: "--risk-low", moderate: "--risk-moderate", high: "--risk-high" };
 
 export default function AssessmentRequests() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [assessments, setAssessments] = useState([]);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("pending");
+  const [risk, setRisk] = useState("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
+    (async () => {
       try {
-        const [me, allData] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
         setUser(me);
-        setAssessments(Array.isArray(allData) ? allData : []);
+        setRows(Array.isArray(all) ? all : []);
+      } catch (e) {
+        setError(e.message || "Could not load requests.");
       } finally {
         setLoading(false);
       }
-    }
-    load();
+    })();
   }, []);
 
-  const total = assessments.length;
-  const pending = assessments.filter(
-    (a) =>
-      (a.risk_category || "").toLowerCase().includes("high") ||
-      (a.risk_category || "").toLowerCase().includes("moderate")
-  ).length;
-  const completed = assessments.filter((a) =>
-    (a.risk_category || "").toLowerCase().includes("low")
-  ).length;
+  const counts = useMemo(() => {
+    const c = { all: rows.length, pending: 0, approved: 0, declined: 0, referred: 0 };
+    rows.forEach((r) => { c[r.review_status] = (c[r.review_status] || 0) + 1; });
+    return c;
+  }, [rows]);
 
-  const filtered = useMemo(() => {
-    if (statusFilter === "pending") {
-      return assessments.filter(
-        (a) =>
-          (a.risk_category || "").toLowerCase().includes("high") ||
-          (a.risk_category || "").toLowerCase().includes("moderate")
-      );
-    }
-    if (statusFilter === "completed") {
-      return assessments.filter((a) =>
-        (a.risk_category || "").toLowerCase().includes("low")
-      );
-    }
-    return assessments;
-  }, [assessments, statusFilter]);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (status !== "all" && r.review_status !== status) return false;
+      if (risk !== "all" && riskKeyFromCategory(r.risk_category) !== risk) return false;
+      if (q && !`${r.business_name} ${r.id} ${r.county} ${r.sector}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [rows, status, risk, query]);
 
-  function exportCSV() {
-    if (assessments.length === 0) return;
-    const headers = ["ID", "MSME Name", "Date Submitted", "Score", "Risk Category"];
-    const rows = assessments.map((a) => [
-      a.id,
-      `"${a.business_name || ""}"`,
-      `"${a.created_at || ""}"`,
-      a.credit_score,
-      `"${a.risk_category || ""}"`,
-    ]);
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const link = document.createElement("a");
-    link.href = encodeURI(csvContent);
-    link.download = `assessment_requests_${Date.now()}.csv`;
-    link.click();
-  }
+  const tabs = [
+    ["pending", "Pending"], ["approved", "Approved"], ["declined", "Declined"],
+    ["referred", "Needs info"], ["all", "All"],
+  ];
 
   return (
-    <AnalystLayout
-      title="Assessment Requests"
-      subtitle="Review and manage MSME assessment requests."
-      user={user}
-      actions={
-        <button
-          onClick={exportCSV}
-          disabled={total === 0}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
-        >
-          <Download size={14} /> Export
-        </button>
-      }
-    >
-      {loading ? (
-        <div className="min-h-[400px] flex items-center justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-        </div>
-      ) : total === 0 ? (
-        <div className="max-w-2xl mx-auto my-16 bg-white rounded-3xl p-10 border border-slate-200/80 text-center">
-          <Inbox size={32} className="mx-auto mb-4 text-slate-400" />
-          <h2 className="text-lg font-bold text-slate-900">No Assessment Requests</h2>
-          <p className="text-xs text-slate-500 mt-1">Incoming evaluations from borrowers will appear here.</p>
-        </div>
-      ) : (
-        <>
-          {/* TOP METRICS */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-800">
-                <FileText size={18} />
-              </div>
-              <div>
-                <p className="text-2xl font-extrabold text-slate-900">{total}</p>
-                <span className="text-[11px] font-medium text-slate-400">Total Requests</span>
-              </div>
-            </div>
+    <AnalystLayout title="Assessment requests" subtitle="Open a request to read the evidence and record a decision." user={user}>
+      {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-                <Clock size={18} />
-              </div>
-              <div>
-                <p className="text-2xl font-extrabold text-slate-900">{pending}</p>
-                <span className="text-[11px] font-medium text-slate-400">Pending Review</span>
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                <CheckCircle2 size={18} />
-              </div>
-              <div>
-                <p className="text-2xl font-extrabold text-slate-900">{completed}</p>
-                <span className="text-[11px] font-medium text-slate-400">Completed</span>
-              </div>
-            </div>
+      <section style={card}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)", marginBottom: "var(--space-5)" }}>
+          {tabs.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setStatus(key)}
+              aria-pressed={status === key}
+              className={status === key ? "btn btn-primary" : "btn btn-secondary"}
+            >
+              {label} <span className="num" style={{ opacity: 0.8 }}>({counts[key] ?? 0})</span>
+            </button>
+          ))}
+          <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search business, county, sector"
+              aria-label="Search requests"
+              style={{ ...inputStyle, minWidth: 220 }}
+            />
+            <select value={risk} onChange={(e) => setRisk(e.target.value)} aria-label="Filter by risk" style={inputStyle}>
+              <option value="all">All risk levels</option>
+              <option value="high">High risk</option>
+              <option value="moderate">Moderate</option>
+              <option value="low">Low risk</option>
+            </select>
           </div>
+        </div>
 
-          {/* REQUESTS TABLE */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50/75 border-b border-slate-100 text-slate-400 uppercase text-[10px] tracking-wider">
+        {loading ? (
+          <p style={{ color: "var(--ink-2)" }}>Loading requests…</p>
+        ) : visible.length === 0 ? (
+          <p style={{ color: "var(--ink-2)" }}>
+            {status === "pending" ? "Nothing is waiting for review." : "No requests match these filters."}
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
                 <tr>
-                  <th className="py-3.5 px-6 font-semibold">Request ID</th>
-                  <th className="py-3.5 px-6 font-semibold">MSME Name</th>
-                  <th className="py-3.5 px-6 font-semibold">Date Submitted</th>
-                  <th className="py-3.5 px-6 font-semibold">Status</th>
-                  <th className="py-3.5 px-6 font-semibold text-right">Action</th>
+                  <th style={th}>Business</th><th style={th}>Submitted</th>
+                  <th style={th}>Score</th><th style={th}>Risk</th>
+                  <th style={th}>Status</th><th style={th}><span className="sr-only">Action</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map((item, idx) => {
-                  const isPending =
-                    (item.risk_category || "").toLowerCase().includes("high") ||
-                    (item.risk_category || "").toLowerCase().includes("moderate");
+              <tbody>
+                {visible.map((r) => {
+                  const k = riskKeyFromCategory(r.risk_category);
                   return (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-4 px-6 font-mono text-slate-500">{item.id}</td>
-                      <td className="py-4 px-6 font-semibold text-slate-900">{item.business_name}</td>
-                      <td className="py-4 px-6 text-slate-600">{item.created_at || "Recent"}</td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                            isPending
-                              ? "bg-amber-50 text-amber-700 border border-amber-200"
-                              : "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                          }`}
-                        >
-                          {isPending ? "Pending Review" : "Completed"}
-                        </span>
+                    <tr key={r.pk}>
+                      <td style={td}>
+                        <div style={{ fontWeight: 600 }}>{r.business_name || "Business not named"}</div>
+                        <div style={muted}><span className="num">{r.id}</span> · {r.sector}, {r.county}</div>
                       </td>
-                      <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() =>
-                            navigate("/assessment/results", { state: { assessment: item } })
-                          }
-                          className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-all shadow-xs"
-                        >
-                          {isPending ? "Review" : "View Report"}
+                      <td style={td}>{r.created_at}</td>
+                      <td style={td}><span className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>{r.credit_score}</span></td>
+                      <td style={{ ...td, color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
+                      <td style={td}><StatusPill status={r.review_status} /></td>
+                      <td style={{ ...td, textAlign: "right" }}>
+                        <button type="button" className="btn btn-secondary" onClick={() => navigate(`/analyst/requests/${r.pk}`)}>
+                          {r.review_status === "pending" ? "Review" : "Open"}
                         </button>
                       </td>
                     </tr>
@@ -180,8 +128,8 @@ export default function AssessmentRequests() {
               </tbody>
             </table>
           </div>
-        </>
-      )}
+        )}
+      </section>
     </AnalystLayout>
   );
 }
