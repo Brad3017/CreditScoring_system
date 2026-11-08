@@ -14,6 +14,11 @@ import RiskAnalytics from "./pages/analyst/RiskAnalytics";
 import ReviewHistory from "./pages/analyst/ReviewHistory";
 import AssessmentReview from "./pages/analyst/AssessmentReview";
 import { getToken } from "./lib/api";
+import AdminOverview from "./pages/admin/AdminOverview";
+import AdminModel from "./pages/admin/AdminModel";
+import AdminFairness from "./pages/admin/AdminFairness";
+import AdminUsers from "./pages/admin/AdminUsers";
+
 
 
 function Private({ children }) {
@@ -24,6 +29,13 @@ function AnalystOnly({ children }) {
   const role = getRole();
   return role === "analyst" || role === "admin" ? children : <Navigate to="/home" replace />;
 }
+function AdminOnly({ children }) {
+  if (!getToken()) return <Navigate to="/login" replace />;
+  const role = getRole();
+  if (role === "admin") return children;
+  return <Navigate to={role === "analyst" ? "/analyst" : "/home"} replace />;
+}
+
 
 export default function App() {
   return (

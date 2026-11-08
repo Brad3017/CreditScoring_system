@@ -155,3 +155,49 @@ export async function reviewAssessment(pk, decision, note) {
   if (!res.ok) throw new Error(await readError(res, "Could not save the review"));
   return res.json();
 }
+
+async function adminGet(path, params = {}) {
+  const q = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v)
+  ).toString();
+  const res = await fetch(`${BASE}${path}${q ? `?${q}` : ""}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    let msg = "Request failed";
+    try { msg = (await res.json()).detail || msg; } catch { /* keep default */ }
+    throw new Error(res.status === 403 ? "Administrator access required." : msg);
+  }
+  return res.json();
+}
+
+export const fetchAdminOverview = (params) => adminGet("/scoring/admin/overview/", params);
+export const fetchAdminFairness = (params) => adminGet("/scoring/admin/fairness/", params);
+export const fetchAdminModel = () => adminGet("/scoring/admin/model/");
+export const fetchAdminUsers = () => adminGet("/auth/admin/users/");
+
+export async function updateAdminUser(id, changes) {
+  const res = await fetch(`${BASE}/auth/admin/users/${id}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(changes),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || "Could not update the user");
+  return body;
+}
+
+export async function downloadAssessmentsCsv(params = {}) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+  const res = await fetch(`${BASE}/scoring/admin/export/${q ? `?${q}` : ""}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error("Export failed");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `assessments_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
