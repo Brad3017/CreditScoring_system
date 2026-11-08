@@ -1,18 +1,18 @@
 from django.urls import path
 from .views import (
-    SubmitCreditAssessmentView, 
-    AssessmentListView, 
+    SubmitCreditAssessmentView,
+    AssessmentListView,
     AllAssessmentsAnalystView,
-    BusinessProfileView
-    # AssessmentDetailView # (If you have this)
+    AssessmentDetailView,
+    ReviewAssessmentView,
+    BusinessProfileView,
 )
 
 urlpatterns = [
-    # This matches the /api/scoring/assess/ POST request from React
     path("assess/", SubmitCreditAssessmentView.as_view(), name="submit_assessment"),
-    
-    # Other endpoints...
     path("assessments/", AssessmentListView.as_view(), name="assessment_list"),
     path("assessments/all/", AllAssessmentsAnalystView.as_view(), name="analyst_assessment_list"),
+    path("assessments/<int:pk>/", AssessmentDetailView.as_view(), name="assessment_detail"),
+    path("assessments/<int:pk>/review/", ReviewAssessmentView.as_view(), name="assessment_review"),
     path("business-profile/", BusinessProfileView.as_view(), name="business_profile"),
 ]

@@ -101,13 +101,7 @@ export async function fetchAllAssessments() {
   return res.json();
 }
 
-export async function fetchAssessmentDetail(id) {
-  const res = await fetch(`${BASE}/assessments/${id}/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
-  });
-  if (!res.ok) throw new Error("Failed to load assessment");
-  return res.json();
-}
+
 
 export async function updateMe(data) {
   const res = await fetch(`${BASE}/auth/me/`, {
@@ -129,4 +123,35 @@ export async function saveBusinessProfile(data) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || JSON.stringify(body) || "Your business details could not be saved.");
   return body;
+}
+
+async function readError(res, fallback) {
+  try {
+    const body = await res.json();
+    return body.detail || body.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function fetchAssessmentDetail(pk) {
+  const res = await fetch(`${BASE}/scoring/assessments/${pk}/`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error(await readError(res, "Failed to load assessment"));
+  return res.json();
+}
+
+// decision: "approved" | "declined" | "referred"
+export async function reviewAssessment(pk, decision, note) {
+  const res = await fetch(`${BASE}/scoring/assessments/${pk}/review/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getToken()}`,
+    },
+    body: JSON.stringify({ decision, note }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not save the review"));
+  return res.json();
 }
