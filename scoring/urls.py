@@ -7,6 +7,9 @@ from .views import (
     ReviewAssessmentView,
     BusinessProfileView,
 )
+from .admin_views import (
+    AdminOverviewView, AdminFairnessView, AdminModelView, AdminExportView,
+)
 
 urlpatterns = [
     path("assess/", SubmitCreditAssessmentView.as_view(), name="submit_assessment"),
@@ -15,4 +18,9 @@ urlpatterns = [
     path("assessments/<int:pk>/", AssessmentDetailView.as_view(), name="assessment_detail"),
     path("assessments/<int:pk>/review/", ReviewAssessmentView.as_view(), name="assessment_review"),
     path("business-profile/", BusinessProfileView.as_view(), name="business_profile"),
+    path("admin/overview/", AdminOverviewView.as_view(), name="admin_overview"),
+    path("admin/fairness/", AdminFairnessView.as_view(), name="admin_fairness"),
+    path("admin/model/", AdminModelView.as_view(), name="admin_model"),
+    path("admin/export/", AdminExportView.as_view(), name="admin_export"),
+
 ]

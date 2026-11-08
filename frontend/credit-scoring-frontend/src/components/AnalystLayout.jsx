@@ -60,7 +60,8 @@ export default function AnalystLayout({ title, subtitle, user, children, actions
 
           <nav className="p-4 space-y-1.5">
             {navItems.map((item) => {
-              const active = location.pathname === item.path;
+              const active = location.pathname === item.path ||
+           (item.path !== "/analyst" && location.pathname.startsWith(item.path + "/"));
               const Icon = item.icon;
               return (
                 <button
