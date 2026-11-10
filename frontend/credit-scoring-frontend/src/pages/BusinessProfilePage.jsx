@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { COUNTIES } from "../lib/counties";
-import { fetchMe, fetchMyAssessments, updateMe, saveBusinessProfile } from "../lib/api";
+import { fetchMe, fetchMyAssessments, fetchBusinessProfile, updateMe, saveBusinessProfile } from "../lib/api";
+import { KRA_PIN_MESSAGE, KRA_PIN_PLACEHOLDER, isValidKraPin, normaliseKraPin } from "../lib/kraPin";
 
 export default function BusinessProfilePage() {
   const [user, setUser] = useState(null);
@@ -14,6 +15,7 @@ export default function BusinessProfilePage() {
   const [personal, setPersonal] = useState({ full_name: "", email: "", national_id: "", phone: "", county: "Nairobi" });
   const [business, setBusiness] = useState({
     business_name: "",
+    kra_pin: "",
     sector: "Retail",
     county: "Nairobi",
     location_type: "Urban",
@@ -26,7 +28,7 @@ export default function BusinessProfilePage() {
     let cancelled = false;
     async function load() {
       try {
-        const [me, list] = await Promise.all([fetchMe(), fetchMyAssessments()]);
+        const [me, list, profile] = await Promise.all([fetchMe(), fetchMyAssessments(), fetchBusinessProfile().catch(() => ({}))]);
         if (cancelled) return;
         setUser(me);
         setPersonal({
@@ -36,9 +38,20 @@ export default function BusinessProfilePage() {
           phone: me.phone || "",
           county: me.county || "Nairobi",
         });
-        // Pre-fill from the latest assessment only when the business has no saved profile yet.
+        // The saved profile wins; the latest assessment only fills in when there is no profile yet.
         const latest = Array.isArray(list) ? list[0] : null;
-        if (latest) {
+        if (profile?.id) {
+          setBusiness({
+            business_name: profile.business_name || "",
+            kra_pin: profile.kra_pin || "",
+            sector: profile.sector || "Retail",
+            county: profile.county || "Nairobi",
+            location_type: profile.location_type || "Urban",
+            legal_status: profile.legal_status || "Sole",
+            business_age_years: profile.business_age_years ?? "",
+            employees_count: profile.employees_count ?? "",
+          });
+        } else if (latest) {
           setBusiness((b) => ({
             ...b,
             business_name: latest.business_name || b.business_name,
@@ -65,8 +78,10 @@ export default function BusinessProfilePage() {
   }
 
   function onBusiness(e) {
-    const { name, value } = e.target;
+    const { name } = e.target;
+    const value = name === "kra_pin" ? e.target.value.toUpperCase() : e.target.value;
     setBusiness((b) => ({ ...b, [name]: value }));
+    setErrors((prev) => ({ ...prev, [name]: undefined }));
     setNotice("");
   }
 
@@ -76,6 +91,8 @@ export default function BusinessProfilePage() {
     if (!/^\d{7,9}$/.test(personal.national_id.trim())) e.national_id = "Enter your national ID number (7 to 9 digits).";
     if (!/^(\+254|0)[17]\d{8}$/.test(personal.phone.replace(/\s/g, ""))) e.phone = "Enter a Kenyan phone number, e.g. +254 700 000 000.";
     if (!business.business_name.trim()) e.business_name = "Enter the business name.";
+    // Optional here; when given it must match the format the server enforces.
+    if (normaliseKraPin(business.kra_pin) && !isValidKraPin(business.kra_pin)) e.kra_pin = KRA_PIN_MESSAGE;
     if (!COUNTIES.includes(business.county)) e.county = "Choose a county from the list.";
     if (business.business_age_years === "" || Number(business.business_age_years) < 0) e.business_age_years = "Enter years trading, 0 or more.";
     if (business.employees_count === "" || Number(business.employees_count) < 0) e.employees_count = "Enter the number of employees.";
@@ -97,6 +114,7 @@ export default function BusinessProfilePage() {
         updateMe(personal),
         saveBusinessProfile({
           ...business,
+          kra_pin: normaliseKraPin(business.kra_pin) || null,
           business_age_years: Number(business.business_age_years),
           employees_count: Number(business.employees_count),
         }),
@@ -105,6 +123,8 @@ export default function BusinessProfilePage() {
       setUser(updatedUser);
       setNotice("Your profile is saved.");
     } catch (err) {
+      // Show server field errors (e.g. a PIN already registered) under their own inputs.
+      if (err.fields && Object.keys(err.fields).length) setErrors((prev) => ({ ...prev, ...err.fields }));
       setError(err.message || "Your profile could not be saved. Try again.");
     } finally {
       setSaving(false);
@@ -140,6 +160,9 @@ export default function BusinessProfilePage() {
               <legend>Your business</legend>
               <div style={grid}>
                 <Field label="Business name" name="business_name" value={business.business_name} onChange={onBusiness} error={errors.business_name} />
+                <Field label="KRA PIN" name="kra_pin" value={business.kra_pin} onChange={onBusiness} error={errors.kra_pin}
+                  placeholder={KRA_PIN_PLACEHOLDER} maxLength={11} autoCapitalize="characters" spellCheck={false}
+                  hint="The letter P, 9 digits, then a letter." />
                 <SelectField label="Sector" name="sector" value={business.sector} onChange={onBusiness}
                   options={["Retail", "Manufacturing", "Services", "Agriculture"]} />
                 <SelectField label="Business county" name="county" value={business.county} onChange={onBusiness} options={COUNTIES} error={errors.county} />

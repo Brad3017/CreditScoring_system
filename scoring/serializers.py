@@ -1,12 +1,44 @@
+from django.core.validators import RegexValidator
 from rest_framework import serializers
+from rest_framework.fields import empty
+from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
-from .models import BusinessProfile, CreditRequest, CreditAssessment
+from .models import (
+    BusinessProfile, CreditRequest, CreditAssessment,
+    KRA_PIN_PATTERN, KRA_PIN_MESSAGE, KRA_PIN_DUPLICATE_MESSAGE, normalise_kra_pin,
+)
 from . import services
 
 User = get_user_model()
 
 
+class KraPinField(serializers.CharField):
+    """Trims and uppercases BEFORE the format check, so "p051234567x " is stored as "P051234567X".
+    Blank becomes None (NULL), so businesses without a PIN never clash on the unique index.
+    No separate max_length check: the format check already fixes the length at 11."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("allow_null", True)
+        validators = list(kwargs.pop("validators", []))
+        super().__init__(validators=[RegexValidator(KRA_PIN_PATTERN, KRA_PIN_MESSAGE), *validators], **kwargs)
+
+    def run_validation(self, data=empty):
+        if data is not empty:
+            data = normalise_kra_pin(data)
+        return super().run_validation(data)
+
+
+class KraPinSerializer(serializers.Serializer):
+    """Format check only, for the PIN sent with an assessment (uniqueness is checked in the view)."""
+    kra_pin = KraPinField()
+
+
 class BusinessProfileSerializer(serializers.ModelSerializer):
+    kra_pin = KraPinField(
+        validators=[UniqueValidator(queryset=BusinessProfile.objects.all(), message=KRA_PIN_DUPLICATE_MESSAGE)],
+    )
+
     class Meta:
         model = BusinessProfile
         fields = "__all__"

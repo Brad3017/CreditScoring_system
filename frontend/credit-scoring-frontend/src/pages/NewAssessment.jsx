@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { COUNTIES } from "../lib/counties";
-import { getCurrentUser, submitAssessment } from "../lib/api";
+import { fetchBusinessProfile, getCurrentUser, submitAssessment } from "../lib/api";
+import { KRA_PIN_MESSAGE, KRA_PIN_PLACEHOLDER, isValidKraPin, normaliseKraPin } from "../lib/kraPin";
 import { useEffect } from "react";
 
 const DRAFT_KEY = "biasharascore_assessment_draft";
@@ -51,7 +52,7 @@ function validate(step, f) {
   const e = {};
   if (step === 1) {
     if (!f.business_name.trim()) e.business_name = "Enter the business name.";
-    if (!/^[A-Z]\d{9}[A-Z]$/.test(f.kra_pin.toUpperCase())) e.kra_pin = "A KRA PIN looks like A123456789B.";
+    if (!isValidKraPin(f.kra_pin)) e.kra_pin = KRA_PIN_MESSAGE;
     if (!COUNTIES.includes(f.county)) e.county = "Choose a county from the list.";
     if (!isWhole(f.business_age_years, 0, 200)) e.business_age_years = "Enter whole years, 0 or more.";
     if (!isWhole(f.employees_count, 0, 10000)) e.employees_count = "Enter a whole number of employees.";
@@ -81,7 +82,7 @@ function validate(step, f) {
 function toPayload(f) {
   return {
     ...f,
-    kra_pin: f.kra_pin.toUpperCase(),
+    kra_pin: normaliseKraPin(f.kra_pin),
     business_age_years: Number(f.business_age_years),
     employees_count: Number(f.employees_count),
     monthly_revenue_kes: Number(f.monthly_revenue_kes),
@@ -104,13 +105,24 @@ export default function NewAssessment() {
   const [submitError, setSubmitError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  // True when the business profile already holds a PIN: it is shown read-only and never overwritten.
+  const [pinLocked, setPinLocked] = useState(false);
 
   useEffect(() => {
     getCurrentUser().then(setUser).catch(() => {});
+    fetchBusinessProfile()
+      .then((profile) => {
+        if (profile?.kra_pin) {
+          setForm((f) => ({ ...f, kra_pin: profile.kra_pin }));
+          setPinLocked(true);
+        }
+      })
+      .catch(() => {}); // No profile yet: the owner types the PIN.
   }, []);
 
   function update(e) {
-    const { name, value } = e.target;
+    const { name } = e.target;
+    const value = name === "kra_pin" ? e.target.value.toUpperCase() : e.target.value;
     setForm((prev) => ({ ...prev, [name]: value }));
     setErrors((prev) => ({ ...prev, [name]: undefined }));
     setNotice("");
@@ -150,6 +162,11 @@ export default function NewAssessment() {
       } catch {}
       navigate("/assessment/results", { state: { assessment: result } });
     } catch (err) {
+      // Field errors from the server (e.g. a PIN already registered) go under their own input.
+      if (err.fields && Object.keys(err.fields).length) {
+        setErrors(err.fields);
+        if (err.fields.kra_pin || err.fields.business_name) setStep(1);
+      }
       setSubmitError(err.message || "The assessment could not be completed. Check your details and try again.");
     } finally {
       setBusy(false);
@@ -175,7 +192,9 @@ export default function NewAssessment() {
       {step === 1 && (
         <Section title="Business">
           <Field label="Business name" name="business_name" value={form.business_name} onChange={update} error={errors.business_name} required />
-          <Field label="KRA PIN" name="kra_pin" value={form.kra_pin} onChange={update} error={errors.kra_pin} placeholder="A123456789B" />
+          <Field label="KRA PIN" name="kra_pin" value={form.kra_pin} onChange={update} error={errors.kra_pin}
+            placeholder={KRA_PIN_PLACEHOLDER} maxLength={11} autoCapitalize="characters" spellCheck={false}
+            readOnly={pinLocked} hint={pinLocked ? "Change it in Business profile" : null} />
           <SelectField label="Legal structure" name="legal_status" value={form.legal_status} onChange={update}
             options={[["Sole", "Sole proprietorship"], ["Partnership", "Partnership"], ["Limited", "Limited company"]]} />
           <SelectField label="Sector" name="sector" value={form.sector} onChange={update}
@@ -225,6 +244,7 @@ export default function NewAssessment() {
           <legend id="review-heading">Check your details</legend>
           <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-4)", margin: 0 }}>
             <Review label="Business" value={form.business_name} />
+            <Review label="KRA PIN" value={normaliseKraPin(form.kra_pin)} />
             <Review label="County" value={form.county} />
             <Review label="Sector" value={form.sector} />
             <Review label="Monthly revenue" value={`KES ${Number(form.monthly_revenue_kes).toLocaleString("en-KE")}`} />
@@ -290,13 +310,16 @@ function Label({ text, htmlFor, required }) {
   );
 }
 
-function Field({ label, name, error, required, ...rest }) {
+function Field({ label, name, error, required, hint, readOnly, ...rest }) {
   const id = `f-${name}`;
+  const describedBy = error ? `${id}-err` : hint ? `${id}-hint` : undefined;
   return (
     <div>
       <Label text={label} htmlFor={id} required={required} />
-      <input id={id} name={name} required={required} aria-invalid={!!error} aria-describedby={error ? `${id}-err` : undefined} style={controlStyle} {...rest} />
+      <input id={id} name={name} required={required} readOnly={readOnly} aria-invalid={!!error} aria-describedby={describedBy}
+        style={readOnly ? { ...controlStyle, background: "var(--paper)", color: "var(--ink-2)" } : controlStyle} {...rest} />
       {error && <p id={`${id}-err`} style={{ color: "var(--risk-high)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{error}</p>}
+      {hint && !error && <p id={`${id}-hint`} style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{hint}</p>}
     </div>
   );
 }

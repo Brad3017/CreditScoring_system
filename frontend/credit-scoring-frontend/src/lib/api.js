@@ -56,12 +56,21 @@ export async function submitAssessment(payload) {
     throw new Error(`Server returned HTTP ${res.status} (${res.statusText}). Check Django terminal.`);
   }
 
-  if (!res.ok) {
-    // Serializer errors arrive as { field: ["message", ...] }; show the messages, not raw JSON.
-    const fieldMessages = Object.values(body || {}).flat().filter((m) => typeof m === "string");
-    throw new Error(body.detail || body.error || fieldMessages.join(" ") || `Request failed (HTTP ${res.status}).`);
-  }
+  if (!res.ok) throw fieldError(body, `Request failed (HTTP ${res.status}).`);
   return body;
+}
+
+// Serializer errors arrive as { field: ["message", ...] }. The Error carries them as .fields
+// (field -> first message) so forms can show each one under its own input.
+function fieldError(body, fallback) {
+  const fields = {};
+  for (const [k, v] of Object.entries(body || {})) {
+    const msg = Array.isArray(v) ? v.find((m) => typeof m === "string") : typeof v === "string" ? v : null;
+    if (msg && k !== "detail" && k !== "error") fields[k] = msg;
+  }
+  const err = new Error(body?.detail || body?.error || Object.values(fields).join(" ") || fallback);
+  err.fields = fields;
+  return err;
 }
 
 export function saveSession(access, refresh, role, user) {
@@ -153,8 +162,17 @@ export async function saveBusinessProfile(data) {
     body: JSON.stringify(data),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || JSON.stringify(body) || "Your business details could not be saved.");
+  if (!res.ok) throw fieldError(body, "Your business details could not be saved.");
   return body;
+}
+
+// The signed-in owner's saved business profile, or {} if there is none yet.
+export async function fetchBusinessProfile() {
+  const res = await fetch(`${BASE}/scoring/business-profile/`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error(await readError(res, "Your business profile could not be loaded."));
+  return res.json();
 }
 
 async function readError(res, fallback) {

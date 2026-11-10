@@ -1,5 +1,19 @@
+from django.core.validators import RegexValidator
 from django.db import models
 from django.conf import settings
+
+# KRA PIN: the letter P, exactly 9 digits, then one letter. Example: P051234567X.
+KRA_PIN_PATTERN = r"^P\d{9}[A-Z]$"
+KRA_PIN_MESSAGE = "Enter a KRA PIN in the format P051234567X: the letter P, 9 digits, then a letter."
+KRA_PIN_DUPLICATE_MESSAGE = "This KRA PIN is already registered to another business."
+
+
+def normalise_kra_pin(value):
+    """Trim and uppercase. Blank becomes None, so empty PINs never clash on the unique index."""
+    if value is None:
+        return None
+    value = str(value).strip().upper()
+    return value or None
 
 
 class BusinessProfile(models.Model):
@@ -10,7 +24,10 @@ class BusinessProfile(models.Model):
     )
 
     business_name = models.CharField(max_length=150)
-    kra_pin = models.CharField(max_length=15, unique=True, null=True, blank=True)
+    kra_pin = models.CharField(
+        max_length=11, unique=True, null=True, blank=True,
+        validators=[RegexValidator(KRA_PIN_PATTERN, KRA_PIN_MESSAGE)],
+    )
     sector = models.CharField(max_length=50)
     business_age_years = models.IntegerField()
     legal_status = models.CharField(max_length=50)
@@ -18,6 +35,11 @@ class BusinessProfile(models.Model):
     employees_count = models.IntegerField()
     county = models.CharField(max_length=50)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        # Every write path (API, admin, shell) stores the same normalised form, or NULL.
+        self.kra_pin = normalise_kra_pin(self.kra_pin)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.business_name

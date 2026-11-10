@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
@@ -6,11 +6,12 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import UserRateThrottle
 
-from .models import CreditRequest, CreditAssessment, BusinessProfile
+from .models import CreditRequest, CreditAssessment, BusinessProfile, KRA_PIN_DUPLICATE_MESSAGE
 from .serializers import (
     CreditRequestSerializer,
     CreditAssessmentSerializer,
     BusinessProfileSerializer,
+    KraPinSerializer,
     MODEL_INPUT_FIELDS,
 )
 from .services import evaluate_credit_request, MODEL_VERSION
@@ -32,6 +33,21 @@ class IsOwner(IsAuthenticated):
         if not super().has_permission(request, view):
             return False
         return request.user.role == "owner"
+
+
+def _current_profile(user):
+    """The business profile shown on the profile page: the user's most recent one."""
+    return BusinessProfile.objects.filter(user=user).order_by("-created_at").first()
+
+
+def _pin_taken(pin, exclude_pk=None):
+    qs = BusinessProfile.objects.filter(kra_pin=pin)
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+    return qs.exists()
+
+
+DUPLICATE_PIN_ERROR = {"kra_pin": [KRA_PIN_DUPLICATE_MESSAGE]}
 
 
 def _reviewer_name(a):
@@ -76,6 +92,8 @@ def _payload(a, detailed=False):
             "email": r.user.email,
             "phone": getattr(r.user, "phone", ""),
         }
+        # Staff-only (detail endpoint). Owners see their own PIN on the business profile only.
+        data["business"] = {"kra_pin": r.business.kra_pin if r.business else None}
         data["request"] = {
             "loan_amount": float(r.loan_amount),
             "tenure_months": r.tenure_months,
@@ -116,7 +134,7 @@ class AssessmentDetailView(APIView):
     def get(self, request, pk):
         try:
             a = CreditAssessment.objects.select_related(
-                "request", "request__user", "reviewed_by"
+                "request", "request__user", "request__business", "reviewed_by"
             ).get(pk=pk)
         except CreditAssessment.DoesNotExist:
             return Response({"detail": "Not found"}, status=404)
@@ -162,8 +180,19 @@ class SubmitCreditAssessmentView(APIView):
 
     def post(self, request):
         serializer = CreditRequestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # The PIN belongs to the business profile, not the credit request, so it is checked separately.
+        pin_serializer = KraPinSerializer(data={"kra_pin": request.data.get("kra_pin")})
+        request_ok, pin_ok = serializer.is_valid(), pin_serializer.is_valid()
+        if not (request_ok and pin_ok):
+            errors = {**(serializer.errors if not request_ok else {}), **(pin_serializer.errors if not pin_ok else {})}
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+        pin = pin_serializer.validated_data.get("kra_pin")
+
+        # The form's PIN is only used when the profile has none yet; an existing PIN is never overwritten.
+        profile = _current_profile(request.user)
+        set_pin = pin is not None and (profile is None or not profile.kra_pin)
+        if set_pin and _pin_taken(pin, exclude_pk=profile.pk if profile else None):
+            return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
 
         # Score first, so a rejected input leaves nothing half-saved.
         try:
@@ -176,34 +205,42 @@ class SubmitCreditAssessmentView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        with transaction.atomic():
-            credit_req = serializer.save(user=request.user)
-            business_profile, _ = BusinessProfile.objects.get_or_create(
-                user=request.user,
-                defaults={
-                    "business_name": credit_req.business_name or "My Business",
-                    "sector": credit_req.sector,
-                    "county": credit_req.county,
-                    "location_type": credit_req.location_type,
-                    "legal_status": credit_req.legal_status,
-                    "business_age_years": credit_req.business_age_years,
-                    "employees_count": credit_req.employees_count,
-                },
-            )
-            credit_req.business = business_profile
-            credit_req.save(update_fields=["business"])
+        try:
+            with transaction.atomic():
+                credit_req = serializer.save(user=request.user)
+                business_profile = profile
+                if business_profile is None:
+                    business_profile = BusinessProfile.objects.create(
+                        user=request.user,
+                        business_name=credit_req.business_name or "My Business",
+                        kra_pin=pin,
+                        sector=credit_req.sector,
+                        county=credit_req.county,
+                        location_type=credit_req.location_type,
+                        legal_status=credit_req.legal_status,
+                        business_age_years=credit_req.business_age_years,
+                        employees_count=credit_req.employees_count,
+                    )
+                elif set_pin:
+                    business_profile.kra_pin = pin
+                    business_profile.save(update_fields=["kra_pin"])
+                credit_req.business = business_profile
+                credit_req.save(update_fields=["business"])
 
-            assessment = CreditAssessment.objects.create(
-                request=credit_req,
-                credit_score=results["credit_score"],
-                probability_of_default=results["probability_of_default"],
-                risk_category=results["risk_category"],
-                recommended_limit=results["recommended_limit"],
-                monthly_repayment_estimate=results["monthly_repayment_estimate"],
-                shap_explanation=results["shap_explanation"],
-                shap_values=results["shap_values"],
-                model_version=results["model_version"],
-            )
+                assessment = CreditAssessment.objects.create(
+                    request=credit_req,
+                    credit_score=results["credit_score"],
+                    probability_of_default=results["probability_of_default"],
+                    risk_category=results["risk_category"],
+                    recommended_limit=results["recommended_limit"],
+                    monthly_repayment_estimate=results["monthly_repayment_estimate"],
+                    shap_explanation=results["shap_explanation"],
+                    shap_values=results["shap_values"],
+                    model_version=results["model_version"],
+                )
+        except IntegrityError:
+            # Another business registered the same PIN between the check above and this save.
+            return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
 
         body = _payload(assessment)
         # Not stored: only meaningful at the moment of scoring.
@@ -292,17 +329,19 @@ class AllAssessmentsAnalystView(APIView):
 class BusinessProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def _current(self, request):
-        return BusinessProfile.objects.filter(user=request.user).order_by("-created_at").first()
-
     def get(self, request):
-        profile = self._current(request)
+        profile = _current_profile(request.user)
         return Response(BusinessProfileSerializer(profile).data if profile else {})
 
     def put(self, request):
-        profile = self._current(request)
+        profile = _current_profile(request.user)
         serializer = BusinessProfileSerializer(profile, data=request.data, partial=True) if profile \
             else BusinessProfileSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(user=request.user)
-        return Response(serializer.data)    
+        try:
+            with transaction.atomic():
+                serializer.save(user=request.user)
+        except IntegrityError:
+            # Same PIN saved by another business between validation and this write.
+            return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.data)

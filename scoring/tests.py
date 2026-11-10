@@ -376,3 +376,117 @@ class SimulateEndpointTests(TestCase):
             codes = [self.client.post(self.url, LOW_RISK, format="json").status_code for _ in range(61)]
         self.assertEqual(codes[:60], [200] * 60)
         self.assertEqual(codes[60], 429)
+
+
+class KraPinTests(TestCase):
+    """KRA PIN format (P + 9 digits + letter), normalisation, uniqueness and saving from an assessment."""
+    profile_url = "/api/scoring/business-profile/"
+    assess_url = "/api/scoring/assess/"
+    FORMAT_MSG = "Enter a KRA PIN in the format P051234567X: the letter P, 9 digits, then a letter."
+    DUP_MSG = "This KRA PIN is already registered to another business."
+    BUSINESS = {
+        "business_name": "Pin Traders", "sector": "Retail", "county": "Nairobi", "location_type": "Urban",
+        "legal_status": "Sole", "business_age_years": 3, "employees_count": 4,
+    }
+
+    def setUp(self):
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="pin1", email="pin1@test.ke", password="x", role="owner")
+        self.other = User.objects.create_user(username="pin2", email="pin2@test.ke", password="x", role="owner")
+
+    def put_profile(self, user, pin):
+        self.client.force_authenticate(user)
+        return self.client.put(self.profile_url, {**self.BUSINESS, "kra_pin": pin}, format="json")
+
+    def profile(self, user):
+        from .models import BusinessProfile
+        return BusinessProfile.objects.get(user=user)
+
+    def test_valid_pin_is_accepted(self):
+        res = self.put_profile(self.owner, "P051234567X")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
+
+    def test_lowercase_and_spaces_are_normalised(self):
+        res = self.put_profile(self.owner, " p051234567x ")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["kra_pin"], "P051234567X")
+        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
+
+    def test_bad_formats_are_rejected(self):
+        for bad in ("A051234567X", "P05123456X", "P0512345678", "P051234567XX"):
+            res = self.put_profile(self.owner, bad)
+            self.assertEqual(res.status_code, 400, bad)
+            self.assertEqual(res.json()["kra_pin"], [self.FORMAT_MSG], bad)
+
+    def test_blank_pin_is_stored_as_null_and_does_not_clash(self):
+        self.assertEqual(self.put_profile(self.owner, "").status_code, 200)
+        self.assertEqual(self.put_profile(self.other, "  ").status_code, 200)
+        self.assertIsNone(self.profile(self.owner).kra_pin)
+        self.assertIsNone(self.profile(self.other).kra_pin)
+
+    def test_duplicate_pin_on_second_business_is_rejected(self):
+        self.assertEqual(self.put_profile(self.owner, "P051234567X").status_code, 200)
+        res = self.put_profile(self.other, "p051234567x")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["kra_pin"], [self.DUP_MSG])
+        # Re-saving your own PIN is not a duplicate.
+        self.assertEqual(self.put_profile(self.owner, "P051234567X").status_code, 200)
+
+    def submit(self, user, pin, **changes):
+        self.client.force_authenticate(user)
+        return self.client.post(self.assess_url, {**LOW_RISK, **changes, "kra_pin": pin}, format="json")
+
+    def test_first_assessment_creates_profile_with_pin(self):
+        res = self.submit(self.owner, "p051234567x")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
+
+    def test_assessment_never_overwrites_existing_pin(self):
+        self.assertEqual(self.submit(self.owner, "P051234567X").status_code, 201)
+        self.assertEqual(self.submit(self.owner, "P999999999Z").status_code, 201)
+        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
+
+    def test_assessment_fills_pin_when_profile_has_none(self):
+        self.assertEqual(self.put_profile(self.owner, "").status_code, 200)
+        self.assertEqual(self.submit(self.owner, "P051234567X").status_code, 201)
+        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
+
+    def test_assessment_with_bad_or_duplicate_pin_saves_nothing(self):
+        res = self.submit(self.owner, "A051234567X")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["kra_pin"], [self.FORMAT_MSG])
+        self.put_profile(self.other, "P051234567X")
+        res = self.submit(self.owner, "P051234567X")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["kra_pin"], [self.DUP_MSG])
+        self.assertEqual(CreditRequest.objects.filter(user=self.owner).count(), 0)
+
+    def test_analyst_sees_pin_owner_list_does_not(self):
+        created = self.submit(self.owner, "P051234567X").json()
+        self.assertNotIn("kra_pin", str(created))
+        analyst = User.objects.create_user(username="pa", email="pa@test.ke", password="x", role="analyst")
+        self.client.force_authenticate(analyst)
+        detail = self.client.get(f"/api/scoring/assessments/{created['pk']}/").json()
+        self.assertEqual(detail["business"]["kra_pin"], "P051234567X")
+
+    def test_data_migration_normalises_and_nulls(self):
+        import importlib
+        from django.apps import apps
+        from .models import BusinessProfile
+        migration = importlib.import_module("scoring.migrations.0008_normalise_kra_pin")
+        rows = {}
+        for i, raw in enumerate(["p051234567x", "A123456789B", "", "P051234567X", "P111111111Q"]):
+            u = User.objects.create_user(username=f"m{i}", email=f"m{i}@test.ke", password="x", role="owner")
+            p = BusinessProfile.objects.create(user=u, **self.BUSINESS)
+            # .update() bypasses save(), planting the raw legacy value.
+            BusinessProfile.objects.filter(pk=p.pk).update(kra_pin=raw)
+            rows[raw] = p.pk
+        normalised, nulled = migration.normalise_kra_pins(apps, None)
+        pin = lambda raw: BusinessProfile.objects.get(pk=rows[raw]).kra_pin
+        self.assertEqual(pin("p051234567x"), "P051234567X")   # trimmed + uppercased
+        self.assertIsNone(pin("A123456789B"))                 # old A-format
+        self.assertIsNone(pin(""))                            # empty string -> NULL
+        self.assertIsNone(pin("P051234567X"))                 # clashes with the earlier row once normalised
+        self.assertEqual(pin("P111111111Q"), "P111111111Q")   # already valid, untouched
+        self.assertEqual((normalised, nulled), (1, 3))

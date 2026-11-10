@@ -97,6 +97,7 @@ export default function AssessmentReview() {
               <dl style={{ margin: 0 }}>
                 <Row label="Applicant" value={`${a.applicant.name} (${a.applicant.email})`} />
                 <Row label="Sector / county" value={`${a.sector}, ${a.county}`} />
+                <Row label="KRA PIN" value={a.business?.kra_pin || "Not provided"} />
                 <Row label="Loan requested" value={`${kes(r.loan_amount)} over ${r.tenure_months} months`} />
                 <Row label="Loan purpose" value={a.loan_purpose || "Not recorded"} />
                 <Row label="Monthly revenue" value={kes(a.monthly_revenue)} />
