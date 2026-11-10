@@ -9,14 +9,6 @@ class BusinessProfile(models.Model):
         related_name="businesses"
     )
 
-
-    kra_pin = models.CharField(
-        max_length=15, 
-        unique=True,  # Ensures no two businesses can share the same PIN
-        null=True,    # Required so existing database rows don't break
-        blank=True,
-        help_text="Standard 11-character KRA PIN (e.g., P123456789A)"
-    )
     business_name = models.CharField(max_length=150)
     kra_pin = models.CharField(max_length=15, unique=True, null=True, blank=True)
     sector = models.CharField(max_length=50)
@@ -49,6 +41,7 @@ class CreditRequest(models.Model):
     # Loan specifics
     loan_amount = models.DecimalField(max_digits=15, decimal_places=2, default=500000.00)
     tenure_months = models.IntegerField(default=12)
+    loan_purpose = models.CharField(max_length=30, default="Working capital")
 
     # Financial performance (Model features)
     monthly_revenue_kes = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
@@ -104,7 +97,12 @@ class CreditAssessment(models.Model):
     risk_category = models.CharField(max_length=20, choices=RISK_CHOICES)
     recommended_limit = models.DecimalField(max_digits=15, decimal_places=2, default=0.00)
     shap_explanation = models.JSONField(default=list)
-    model_version = models.CharField(max_length=50, default="xgb_msme_v1")
+    # Per-feature SHAP contributions (log-odds of default). Empty for assessments made before v2.
+    shap_values = models.JSONField(default=list, blank=True)
+    # Flat estimate: loan amount / tenure, no interest.
+    monthly_repayment_estimate = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    # No default: the view always sets this from model_metadata.json, so a missing value fails loudly.
+    model_version = models.CharField(max_length=50)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # ---- Analyst review (new) ----

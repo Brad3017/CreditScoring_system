@@ -4,7 +4,8 @@ import AppShell from "../components/AppShell";
 import StatusPill from "../components/StatusPill";
 import { Columns } from "../components/charts";
 import { riskKeyFromCategory } from "../components/RiskScale";
-import { fetchMe, fetchMyAssessments } from "../lib/api";
+import LegacyTag from "../components/LegacyTag";
+import { getCurrentUser, fetchMyAssessments } from "../lib/api";
 
 const kes = (n) => (n == null || Number.isNaN(n) ? "Not recorded" : `KES ${Math.round(n).toLocaleString("en-KE")}`);
 const RISK_LABEL = { low: "Low risk", moderate: "Moderate risk", high: "High risk" };
@@ -14,6 +15,9 @@ const shortDate = (s = "") => s.split(",")[0] || s;
 // "Caution: Days Payable Outstanding elevated ..." -> { name, helped }
 function parseFactor(text = "") {
   const s = String(text);
+  // v2 sentences: "<Factor> raised|lowered the assessed risk."
+  const v2 = s.match(/^(.+?)\s+(raised|lowered) the assessed risk/i);
+  if (v2) return { name: v2[1], helped: v2[2].toLowerCase() === "lowered" };
   const caution = s.match(/^Caution:\s*(.+?)\s+elevated/i);
   if (caution) return { name: caution[1], helped: false };
   const positive = s.match(/^Positive:\s*Strong\s+(.+?)\s+(?:supported|contributed)/i);
@@ -23,7 +27,7 @@ function parseFactor(text = "") {
 
 function Stat({ label, children, hint }) {
   return (
-    <div className="panel" style={{ padding: "var(--space-5)" }}>
+    <div className="stat">
       <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{label}</div>
       <div style={{ marginTop: "var(--space-2)" }}>{children}</div>
       {hint && <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{hint}</div>}
@@ -88,7 +92,7 @@ export default function Analytics() {
     let cancelled = false;
     (async () => {
       try {
-        const [me, list] = await Promise.all([fetchMe(), fetchMyAssessments()]);
+        const [me, list] = await Promise.all([getCurrentUser(), fetchMyAssessments()]);
         if (cancelled) return;
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
@@ -129,15 +133,18 @@ export default function Analytics() {
   return (
     <AppShell user={user}>
       <div className="stack">
-        <header>
-          <h1 style={{ fontSize: "var(--text-2xl)" }}>Your credit picture</h1>
-          <p style={{ color: "var(--ink-2)", margin: "var(--space-2) 0 0" }}>
-            How your score has moved, and what keeps shaping it.
-          </p>
+        <header className="page-head">
+          <h1>Your credit picture</h1>
+          <p>How your score has moved, and what keeps shaping it.</p>
         </header>
 
-        {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
-        {loading && <p style={{ color: "var(--ink-2)" }}>Loading your analytics…</p>}
+        {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
+        {loading && (
+          <section className="panel" aria-busy="true">
+            <h2 className="panel-title">Your credit picture</h2>
+            <p style={{ color: "var(--ink-2)", margin: 0 }}>Loading your analytics…</p>
+          </section>
+        )}
 
         {!loading && !error && !latest && (
           <section className="panel">
@@ -151,7 +158,7 @@ export default function Analytics() {
 
         {latest && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "var(--space-6)" }}>
+            <div className="stat-grid">
               <Stat
                 label="Latest score"
                 hint={delta == null ? "First assessment" : delta === 0 ? "No change since the last one" : `${delta > 0 ? "Up" : "Down"} ${Math.abs(delta)} since the last one`}
@@ -215,26 +222,23 @@ export default function Analytics() {
 
             <section className="panel" aria-labelledby="all-heading">
               <h2 id="all-heading" className="panel-title">All assessments</h2>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div className="table-wrap">
+                <table className="table">
                   <thead>
                     <tr>
-                      {["Date", "Score", "Risk", "Recommended limit", "Review"].map((h) => (
-                        <th key={h} style={{ textAlign: "left", padding: "var(--space-3)", fontSize: "var(--text-xs)", color: "var(--ink-2)", borderBottom: "1px solid var(--line-strong)" }}>{h}</th>
-                      ))}
+                      {["Date", "Score", "Risk", "Recommended limit", "Review"].map((h) => <th key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {assessments.map((a) => {
                       const k = riskKeyFromCategory(a.risk_category);
-                      const cell = { padding: "var(--space-3)", borderBottom: "1px solid var(--line)" };
                       return (
                         <tr key={a.id}>
-                          <td style={cell}>{a.created_at}</td>
-                          <td style={cell} className="num"><strong>{a.credit_score}</strong></td>
-                          <td style={{ ...cell, color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
-                          <td style={cell} className="num">{Number(a.recommended_limit) ? kes(a.recommended_limit) : "None"}</td>
-                          <td style={cell}><StatusPill status={a.review_status || "pending"} /></td>
+                          <td style={{ whiteSpace: "nowrap" }}>{a.created_at}<LegacyTag record={a} /></td>
+                          <td className="num"><strong>{a.credit_score}</strong></td>
+                          <td style={{ color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
+                          <td className="num">{Number(a.recommended_limit) ? kes(a.recommended_limit) : "None"}</td>
+                          <td><StatusPill status={a.review_status || "pending"} /></td>
                         </tr>
                       );
                     })}

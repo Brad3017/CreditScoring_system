@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { ChartCard, BarList, Empty } from "../../components/charts";
 import { card, muted, th, td } from "../../components/analystUi";
-import { fetchMe, fetchAdminModel } from "../../lib/api";
+import { getCurrentUser, fetchAdminModel } from "../../lib/api";
 
 function Kpi({ label, value, hint }) {
   return (
@@ -62,7 +62,7 @@ export default function AdminModel() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchMe().then(setUser).catch(() => {});
+    getCurrentUser().then(setUser).catch(() => {});
     fetchAdminModel().then(setD).catch((e) => setError(e.message));
   }, []);
 
@@ -107,19 +107,21 @@ export default function AdminModel() {
 
             <ChartCard title="Per-class results" subtitle="Precision, recall and F1 on the test split">
               {r?.per_class?.length ? (
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead><tr><th style={th}>Class</th><th style={th}>Precision</th><th style={th}>Recall</th><th style={th}>F1</th></tr></thead>
-                  <tbody>
-                    {r.per_class.map((c) => (
-                      <tr key={c.name}>
-                        <td style={td}>{c.name}</td>
-                        <td style={td} className="num">{fmt(c.precision)}</td>
-                        <td style={td} className="num">{fmt(c.recall)}</td>
-                        <td style={td} className="num">{fmt(c.f1)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr><th style={th}>Class</th><th style={th}>Precision</th><th style={th}>Recall</th><th style={th}>F1</th></tr></thead>
+                    <tbody>
+                      {r.per_class.map((c) => (
+                        <tr key={c.name}>
+                          <td style={td}>{c.name}</td>
+                          <td style={td} className="num">{fmt(c.precision)}</td>
+                          <td style={td} className="num">{fmt(c.recall)}</td>
+                          <td style={td} className="num">{fmt(c.f1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : <Empty>No per-class figures in the report.</Empty>}
             </ChartCard>
 
@@ -158,13 +160,15 @@ export default function AdminModel() {
 
             {r?.hyperparameters && (
               <ChartCard title="Hyperparameters" subtitle="Chosen by tuning in the notebook">
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <tbody>
-                    {Object.entries(r.hyperparameters).map(([k, v]) => (
-                      <tr key={k}><td style={td}>{k}</td><td style={{ ...td, textAlign: "right" }} className="num">{v}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      {Object.entries(r.hyperparameters).map(([k, v]) => (
+                        <tr key={k}><td style={td}>{k}</td><td style={{ ...td, textAlign: "right" }} className="num">{v}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </ChartCard>
             )}
           </div>

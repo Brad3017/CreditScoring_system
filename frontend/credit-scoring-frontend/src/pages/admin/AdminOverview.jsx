@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { ChartCard, BarList, Columns, Split, Empty } from "../../components/charts";
 import { card, muted, inputStyle } from "../../components/analystUi";
-import { fetchMe, fetchAdminOverview, downloadAssessmentsCsv } from "../../lib/api";
+import { getCurrentUser, fetchAdminOverview, downloadAssessmentsCsv } from "../../lib/api";
 
 function Kpi({ label, value, hint }) {
   return (
@@ -24,7 +24,7 @@ export default function AdminOverview() {
   const [to, setTo] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { fetchMe().then(setUser).catch(() => {}); }, []);
+  useEffect(() => { getCurrentUser().then(setUser).catch(() => {}); }, []);
 
   useEffect(() => {
     setError("");

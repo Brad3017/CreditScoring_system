@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
@@ -10,7 +11,7 @@ from .serializers import (
     CreditAssessmentSerializer,
     BusinessProfileSerializer,
 )
-from .services import evaluate_credit_request
+from .services import evaluate_credit_request, MODEL_VERSION
 
 
 class IsAnalystOrAdmin(IsAuthenticated):
@@ -52,6 +53,14 @@ def _payload(a, detailed=False):
         "risk_category": a.risk_category,
         "recommended_limit": float(a.recommended_limit),
         "explanation": a.shap_explanation,
+        "shap_values": a.shap_values or [],
+        "requested_amount": float(r.loan_amount),
+        # 0 only on rows created before this field existed; a real estimate is never 0.
+        "monthly_repayment_estimate": float(a.monthly_repayment_estimate) or None,
+        "loan_purpose": r.loan_purpose,
+        "model_version": a.model_version,
+        # Scored by an earlier model whose risk bands differ from the current score scale.
+        "is_legacy": a.model_version != MODEL_VERSION,
         "created_at": a.created_at.strftime("%b %d, %Y"),
         "created_at_iso": a.created_at.isoformat(),
         "review_status": a.review_status,
@@ -154,41 +163,50 @@ class SubmitCreditAssessmentView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        credit_req = serializer.save(user=request.user)
-
-        business_profile, _ = BusinessProfile.objects.get_or_create(
-            user=request.user,
-            defaults={
-                "business_name": credit_req.business_name or "My Business",
-                "sector": credit_req.sector,
-                "county": credit_req.county,
-                "location_type": credit_req.location_type,
-                "legal_status": credit_req.legal_status,
-                "business_age_years": credit_req.business_age_years,
-                "employees_count": credit_req.employees_count,
-            },
-        )
-        credit_req.business = business_profile
-        credit_req.save()
-
+        # Score first, so a rejected input leaves nothing half-saved.
         try:
-            results = evaluate_credit_request(credit_req)
+            results = evaluate_credit_request(CreditRequest(**serializer.validated_data))
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response(
                 {"error": f"Scoring engine error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        assessment = CreditAssessment.objects.create(
-            request=credit_req,
-            credit_score=results["credit_score"],
-            probability_of_default=results["probability_of_default"],
-            risk_category=results["risk_category"],
-            recommended_limit=results["recommended_limit"],
-            shap_explanation=results["shap_explanation"],
-            model_version="xgb_msme_v1",
-        )
-        return Response(_payload(assessment), status=status.HTTP_201_CREATED)
+        with transaction.atomic():
+            credit_req = serializer.save(user=request.user)
+            business_profile, _ = BusinessProfile.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    "business_name": credit_req.business_name or "My Business",
+                    "sector": credit_req.sector,
+                    "county": credit_req.county,
+                    "location_type": credit_req.location_type,
+                    "legal_status": credit_req.legal_status,
+                    "business_age_years": credit_req.business_age_years,
+                    "employees_count": credit_req.employees_count,
+                },
+            )
+            credit_req.business = business_profile
+            credit_req.save(update_fields=["business"])
+
+            assessment = CreditAssessment.objects.create(
+                request=credit_req,
+                credit_score=results["credit_score"],
+                probability_of_default=results["probability_of_default"],
+                risk_category=results["risk_category"],
+                recommended_limit=results["recommended_limit"],
+                monthly_repayment_estimate=results["monthly_repayment_estimate"],
+                shap_explanation=results["shap_explanation"],
+                shap_values=results["shap_values"],
+                model_version=results["model_version"],
+            )
+
+        body = _payload(assessment)
+        # Not stored: only meaningful at the moment of scoring.
+        body["out_of_range"] = results["out_of_range"]
+        return Response(body, status=status.HTTP_201_CREATED)
 
 
 class AllAssessmentsAnalystView(APIView):

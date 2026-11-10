@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../components/AnalystLayout";
 import StatusPill from "../components/StatusPill";
 import { riskKeyFromCategory } from "../components/RiskScale";
-import { fetchMe, fetchAllAssessments } from "../lib/api";
+import { getCurrentUser, fetchAllAssessments } from "../lib/api";
 
 // Shared styles, all driven by the design tokens in tokens.css
 const card = {
@@ -53,7 +53,7 @@ export default function AnalystDashboard() {
     async function loadAnalystData() {
       setLoading(true);
       try {
-        const [me, allData] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, allData] = await Promise.all([getCurrentUser(), fetchAllAssessments()]);
         setAnalyst(me);
         setAssessments(Array.isArray(allData) ? allData : []);
       } catch (err) {

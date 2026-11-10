@@ -22,7 +22,7 @@ export default function Login() {
       const data = await login(form);
 
       // Save tokens + role
-      saveSession(data.access, data.refresh, data.role || "owner");
+      saveSession(data.access, data.refresh, data.role || "owner", data.user);
 
       // Route by role
       if (data.role === "analyst") {

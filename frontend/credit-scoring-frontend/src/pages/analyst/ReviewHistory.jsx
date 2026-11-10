@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../../components/AnalystLayout";
 import StatusPill from "../../components/StatusPill";
 import { card, muted, inputStyle, th, td, fmtDateTime } from "../../components/analystUi";
-import { fetchMe, fetchAllAssessments } from "../../lib/api";
+import { getCurrentUser, fetchAllAssessments } from "../../lib/api";
 
 export default function ReviewHistory() {
   const navigate = useNavigate();
@@ -16,7 +16,7 @@ export default function ReviewHistory() {
   useEffect(() => {
     (async () => {
       try {
-        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([getCurrentUser(), fetchAllAssessments()]);
         setUser(me);
         setRows((Array.isArray(all) ? all : []).filter((r) => r.reviewed_at));
       } catch (e) {
@@ -54,7 +54,7 @@ export default function ReviewHistory() {
         ) : visible.length === 0 ? (
           <p style={{ color: "var(--ink-2)" }}>No decisions recorded yet. Reviews you complete will appear here.</p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>

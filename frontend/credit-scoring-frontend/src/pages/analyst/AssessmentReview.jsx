@@ -3,15 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import AnalystLayout from "../../components/AnalystLayout";
 import StatusPill from "../../components/StatusPill";
 import RiskScale from "../../components/RiskScale";
+import ShapChart from "../../components/ShapChart";
+import LegacyTag from "../../components/LegacyTag";
+import AffordabilityPanel from "../../components/AffordabilityPanel";
 import { card, cardHead, cardTitle, muted, inputStyle, kes, fmtDateTime } from "../../components/analystUi";
-import { fetchMe, fetchAssessmentDetail, reviewAssessment } from "../../lib/api";
-
-function parseFactor(text = "") {
-  const s = String(text);
-  if (/^caution/i.test(s)) return { hurt: true, text: s.replace(/^caution:\s*/i, "") };
-  if (/^positive/i.test(s)) return { hurt: false, text: s.replace(/^positive:\s*/i, "") };
-  return { hurt: null, text: s };
-}
+import { getCurrentUser, fetchAssessmentDetail, reviewAssessment } from "../../lib/api";
 
 function Row({ label, value }) {
   return (
@@ -35,7 +31,7 @@ export default function AssessmentReview() {
   useEffect(() => {
     (async () => {
       try {
-        const [me, detail] = await Promise.all([fetchMe(), fetchAssessmentDetail(pk)]);
+        const [me, detail] = await Promise.all([getCurrentUser(), fetchAssessmentDetail(pk)]);
         setUser(me);
         setA(detail);
         setNote(detail.review_note || "");
@@ -59,7 +55,6 @@ export default function AssessmentReview() {
   }
 
   const r = a?.request;
-  const factors = (a?.explanation || []).map(parseFactor);
   const needsNote = !note.trim() || note.trim().length < 5;
 
   return (
@@ -80,32 +75,21 @@ export default function AssessmentReview() {
                 <h2 style={cardTitle}>Model result</h2>
                 <StatusPill status={a.review_status} />
               </div>
-              <RiskScale score={a.credit_score} riskCategory={a.risk_category} />
+              <RiskScale score={a.credit_score} riskCategory={a.risk_category} isLegacy={a.is_legacy} modelVersion={a.model_version} />
               <dl style={{ margin: "var(--space-5) 0 0" }}>
                 <Row label="Probability of default" value={`${(a.probability_of_default * 100).toFixed(1)}%`} />
-                <Row label="Recommended limit" value={kes(a.recommended_limit)} />
-                <Row label="Model version" value="xgb_msme_v1" />
+                <Row label="Model version" value={<>{a.model_version || "Not recorded"}<LegacyTag record={a} /></>} />
               </dl>
             </section>
 
             <section style={card}>
               <div style={cardHead}><h2 style={cardTitle}>What shaped this result</h2></div>
-              {factors.length === 0 ? (
-                <p style={{ color: "var(--ink-2)" }}>No explanation was stored for this assessment.</p>
-              ) : (
-                <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                  {factors.map((f, i) => (
-                    <li key={i} style={{ padding: "var(--space-3) 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
-                      {f.hurt !== null && (
-                        <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, marginRight: "var(--space-3)", color: f.hurt ? "var(--risk-high)" : "var(--risk-low)" }}>
-                          {f.hurt ? "Hurt" : "Helped"}
-                        </span>
-                      )}
-                      {f.text}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <ShapChart values={a.shap_values} legacyExplanation={a.explanation || []} />
+            </section>
+
+            <section style={card}>
+              <div style={cardHead}><h2 style={cardTitle}>Loan affordability</h2></div>
+              <AffordabilityPanel assessment={a} />
             </section>
 
             <section style={card}>
@@ -114,6 +98,7 @@ export default function AssessmentReview() {
                 <Row label="Applicant" value={`${a.applicant.name} (${a.applicant.email})`} />
                 <Row label="Sector / county" value={`${a.sector}, ${a.county}`} />
                 <Row label="Loan requested" value={`${kes(r.loan_amount)} over ${r.tenure_months} months`} />
+                <Row label="Loan purpose" value={a.loan_purpose || "Not recorded"} />
                 <Row label="Monthly revenue" value={kes(a.monthly_revenue)} />
                 <Row label="Monthly profit" value={kes(r.monthly_profit_kes)} />
                 <Row label="Days to pay suppliers" value={r.days_payable_outstanding} />

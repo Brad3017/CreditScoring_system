@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { card, cardHead, cardTitle, muted, inputStyle, th, td } from "../../components/analystUi";
-import { fetchMe, fetchAdminFairness } from "../../lib/api";
+import { getCurrentUser, fetchAdminFairness } from "../../lib/api";
 
 const pct = (v) => (v == null ? "–" : `${v}%`);
 
@@ -12,7 +12,7 @@ export default function AdminFairness() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  useEffect(() => { fetchMe().then(setUser).catch(() => {}); }, []);
+  useEffect(() => { getCurrentUser().then(setUser).catch(() => {}); }, []);
   useEffect(() => {
     setError("");
     fetchAdminFairness({ date_from: from, date_to: to }).then(setD).catch((e) => setError(e.message));
@@ -52,7 +52,7 @@ export default function AdminFairness() {
                 : <>Gap in high-risk share: <span className="num" style={{ fontWeight: 600 }}>{dim.gap} points</span></>}
             </span>
           </div>
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>

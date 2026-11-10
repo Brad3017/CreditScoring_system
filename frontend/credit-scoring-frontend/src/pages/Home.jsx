@@ -2,13 +2,17 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import RiskScale, { riskKeyFromCategory } from "../components/RiskScale";
-import { fetchMe, fetchMyAssessments } from "../lib/api";
+import LegacyTag from "../components/LegacyTag";
+import { getCurrentUser, fetchMyAssessments } from "../lib/api";
 
 // Formats money, or says plainly that it is missing. Never invents a value.
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
 
 // API explanations look like "Positive: Strong Cashflow Stability contributed favorably…"
 function parseFactor(text = "") {
+  // v2 sentences: "<Factor> raised|lowered the assessed risk."
+  const v2 = text.match(/\b(raised|lowered) the assessed risk\.?$/i);
+  if (v2) return { reduces: v2[1].toLowerCase() === "lowered", text };
   const m = text.match(/^(Positive|Caution):\s*(.*)$/i);
   if (!m) return { reduces: null, text };
   return { reduces: m[1].toLowerCase() === "positive", text: m[2] };
@@ -31,7 +35,7 @@ export default function Home() {
     let cancelled = false;
     async function load() {
       try {
-        const [me, list] = await Promise.all([fetchMe(), fetchMyAssessments()]);
+        const [me, list] = await Promise.all([getCurrentUser(), fetchMyAssessments()]);
         if (cancelled) return;
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
@@ -52,80 +56,69 @@ export default function Home() {
   const firstName = user?.full_name?.split(" ")[0];
   const openReport = (assessment) => navigate("/assessment/results", { state: { assessment } });
 
-  if (loading) {
-    return (
-      <AppShell user={user}>
-        <p style={{ color: "var(--ink-2)" }}>Loading…</p>
-      </AppShell>
-    );
-  }
+  const loadingLine = <p style={{ color: "var(--ink-2)", margin: 0 }}>Loading…</p>;
 
   return (
     <AppShell user={user}>
-      <header style={{ marginBottom: "var(--space-8)" }}>
-        <p style={{ color: "var(--ink-2)", fontSize: "var(--text-sm)" }}>
-          {latest ? `${latest.business_name || "Your business"} · last assessed ${latest.created_at || "recently"}` : "Your business overview"}
+      <header className="page-head">
+        <h1>{firstName ? `Hello, ${firstName}` : "Hello"}</h1>
+        <p>
+          {loading
+            ? "Loading your business overview…"
+            : latest ? `${latest.business_name || "Your business"} · last assessed ${latest.created_at || "recently"}` : "Your business overview"}
         </p>
-        <h1 style={{ fontSize: "var(--text-2xl)", marginTop: "var(--space-1)" }}>
-          {firstName ? `Hello, ${firstName}` : "Hello"}
-        </h1>
       </header>
 
-      {error && (
-        <p role="alert" style={{ color: "var(--risk-high)", marginBottom: "var(--space-6)" }}>
-          {error}
-        </p>
-      )}
+      {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
 
-      {!latest && !error ? (
-        <section className="card" style={{ maxWidth: 560 }}>
-          <h2 className="section-title">Start with your first assessment</h2>
-          <p style={{ color: "var(--ink-2)", marginBottom: "var(--space-6)" }}>
+      {!loading && !latest && !error ? (
+        <section className="panel" aria-labelledby="start-heading">
+          <div className="panel-head"><h2 id="start-heading">Start with your first assessment</h2></div>
+          <p style={{ color: "var(--ink-2)", margin: "0 0 var(--space-6)", maxWidth: "60ch" }}>
             It takes about five minutes and asks about your business, finances and borrowing history. You will see your score and the factors behind it straight away.
           </p>
           <button type="button" className="btn btn-primary" onClick={() => navigate("/assessment/new")}>
             Start an assessment
           </button>
         </section>
-      ) : latest ? (
-        <div className="stack">
-          <div className="two-col">
-            {/* Score card */}
-            <section className="card" aria-labelledby="latest-heading">
-              <h2 id="latest-heading" style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-body)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--space-5)" }}>
-                Latest credit score
-              </h2>
-              <RiskScale score={latest.credit_score} riskCategory={latest.risk_category} />
-              {riskKey && (
-                <p style={{ marginTop: "var(--space-8)", fontSize: "var(--text-base)", maxWidth: "52ch" }}>
-                  {STATEMENTS[riskKey]}
-                </p>
-              )}
-              <div style={{ marginTop: "var(--space-6)" }}>
-                <button type="button" className="btn btn-secondary" onClick={() => openReport(latest)}>
-                  View full report
-                </button>
+      ) : (loading || latest) ? (
+        <>
+          <div className="split">
+            <section className="panel" aria-labelledby="latest-heading">
+              <div className="panel-head">
+                <h2 id="latest-heading">Latest credit score</h2>
+                {latest && (
+                  <button type="button" className="btn btn-secondary" onClick={() => openReport(latest)}>
+                    View full report
+                  </button>
+                )}
               </div>
+              {loading ? loadingLine : (
+                <>
+                  <RiskScale score={latest.credit_score} riskCategory={latest.risk_category} isLegacy={latest.is_legacy} modelVersion={latest.model_version} />
+                  {riskKey && (
+                    <p style={{ margin: "var(--space-6) 0 0", maxWidth: "52ch" }}>{STATEMENTS[riskKey]}</p>
+                  )}
+                </>
+              )}
             </section>
 
-            {/* Business card */}
-            <section className="card" aria-labelledby="facts-heading">
-              <h2 id="facts-heading" style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-body)", fontWeight: 600, color: "var(--ink-2)", marginBottom: "var(--space-5)" }}>
-                Business at a glance
-              </h2>
-              <dl className="facts">
-                <Fact label="Monthly revenue" value={kes(latest.monthly_revenue)} />
-                <Fact label="Recommended limit" value={kes(latest.recommended_limit)} />
-                <Fact label="Sector" value={latest.sector || "Not recorded"} />
-                <Fact label="County" value={latest.county || "Not recorded"} />
-              </dl>
+            <section className="panel" aria-labelledby="facts-heading">
+              <div className="panel-head"><h2 id="facts-heading">Business at a glance</h2></div>
+              {loading ? loadingLine : (
+                <dl className="stat-grid" style={{ margin: 0, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+                  <Fact label="Monthly revenue" value={kes(latest.monthly_revenue)} />
+                  <Fact label="Recommended limit" value={kes(latest.recommended_limit)} />
+                  <Fact label="Sector" value={latest.sector || "Not recorded"} />
+                  <Fact label="County" value={latest.county || "Not recorded"} />
+                </dl>
+              )}
             </section>
           </div>
 
-          {/* Factors */}
-          <section aria-labelledby="factors-heading">
-            <h2 id="factors-heading" className="section-title">What shaped this result</h2>
-            {latest.explanation?.length ? (
+          <section className="panel" aria-labelledby="factors-heading">
+            <div className="panel-head"><h2 id="factors-heading">What shaped this result</h2></div>
+            {loading ? loadingLine : latest.explanation?.length ? (
               <ul className="factor-list">
                 {latest.explanation.map((item, i) => {
                   const f = parseFactor(item);
@@ -146,41 +139,44 @@ export default function Home() {
                 })}
               </ul>
             ) : (
-              <p style={{ color: "var(--ink-2)" }}>No factor breakdown was recorded for this assessment.</p>
+              <p style={{ color: "var(--ink-2)", margin: 0 }}>No factor breakdown was recorded for this assessment.</p>
             )}
           </section>
 
-          {/* Recent */}
-          <section aria-labelledby="recent-heading">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "var(--space-5)", gap: "var(--space-4)", flexWrap: "wrap" }}>
-              <h2 id="recent-heading" className="section-title" style={{ margin: 0 }}>Recent assessments</h2>
+          <section className="panel" aria-labelledby="recent-heading">
+            <div className="panel-head">
+              <h2 id="recent-heading">Recent assessments</h2>
               <button type="button" className="btn btn-secondary" onClick={() => navigate("/assessments")}>
                 All assessments
               </button>
             </div>
-            <ul className="factor-list">
-              {assessments.slice(0, 3).map((item, i) => {
-                const key = riskKeyFromCategory(item.risk_category);
-                return (
-                  <li key={item.id || i} className="card" style={{ padding: "var(--space-4) var(--space-5)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-4)", boxShadow: "none" }}>
-                    <span>
-                      <span style={{ display: "block", fontWeight: 600 }}>{item.created_at || "Recent"}</span>
-                      <span className="num" style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{item.id}</span>
-                    </span>
-                    <span style={{ textAlign: "right" }}>
-                      <span className="num" style={{ fontWeight: 700, fontSize: "var(--text-lg)" }}>{item.credit_score ?? "–"}</span>
-                      {key && (
-                        <span style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: `var(--risk-${key})` }}>
-                          {item.risk_category}
-                        </span>
-                      )}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+            {loading ? loadingLine : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr><th>Date</th><th>Reference</th><th style={{ textAlign: "right" }}>Score</th><th>Risk</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {assessments.slice(0, 3).map((item, i) => {
+                      const key = riskKeyFromCategory(item.risk_category);
+                      return (
+                        <tr key={item.id || i}>
+                          <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{item.created_at || "Recent"}</td>
+                          <td><span className="num" style={{ color: "var(--ink-2)" }}>{item.id}</span><LegacyTag record={item} /></td>
+                          <td className="num" style={{ textAlign: "right", fontWeight: 700 }}>{item.credit_score ?? "–"}</td>
+                          <td style={{ fontWeight: 600, color: key ? `var(--risk-${key})` : "var(--ink-2)", whiteSpace: "nowrap" }}>{item.risk_category || "–"}</td>
+                          <td style={{ textAlign: "right" }}>
+                            <button type="button" className="btn btn-secondary" onClick={() => openReport(item)}>View</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
-        </div>
+        </>
       ) : null}
     </AppShell>
   );
@@ -188,9 +184,9 @@ export default function Home() {
 
 function Fact({ label, value }) {
   return (
-    <div className="fact">
-      <dt>{label}</dt>
-      <dd className="num">{value}</dd>
+    <div className="stat">
+      <dt style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{label}</dt>
+      <dd className="num" style={{ margin: "var(--space-1) 0 0", fontWeight: 600, fontSize: "var(--text-lg)" }}>{value}</dd>
     </div>
   );
 }

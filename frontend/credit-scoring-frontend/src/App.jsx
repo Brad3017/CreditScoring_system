@@ -1,23 +1,30 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import NewAssessment from "./pages/NewAssessment";
 import Analytics from "./pages/Analytics";
-import AnalystDashboard from './pages/AnalystDashboard';
 import AssessmentResultPage from './pages/AssessmentResultPage';
 import MyAssessments from "./pages/MyAssessments";
 import BusinessProfilePage from "./pages/BusinessProfilePage";
-import MsmeRecords from "./pages/analyst/MsmeRecords";
-import AssessmentRequests from "./pages/analyst/AssessmentRequests";
-import RiskAnalytics from "./pages/analyst/RiskAnalytics";
-import ReviewHistory from "./pages/analyst/ReviewHistory";
-import AssessmentReview from "./pages/analyst/AssessmentReview";
 import { getToken, getRole } from "./lib/api";
-import AdminOverview from "./pages/admin/AdminOverview";
-import AdminModel from "./pages/admin/AdminModel";
-import AdminFairness from "./pages/admin/AdminFairness";
-import AdminUsers from "./pages/admin/AdminUsers";
+
+// Staff pages are split into their own chunks, so business owners never download them.
+const AnalystDashboard = lazy(() => import("./pages/AnalystDashboard"));
+const AssessmentRequests = lazy(() => import("./pages/analyst/AssessmentRequests"));
+const AssessmentReview = lazy(() => import("./pages/analyst/AssessmentReview"));
+const MsmeRecords = lazy(() => import("./pages/analyst/MsmeRecords"));
+const RiskAnalytics = lazy(() => import("./pages/analyst/RiskAnalytics"));
+const ReviewHistory = lazy(() => import("./pages/analyst/ReviewHistory"));
+const AdminOverview = lazy(() => import("./pages/admin/AdminOverview"));
+const AdminModel = lazy(() => import("./pages/admin/AdminModel"));
+const AdminFairness = lazy(() => import("./pages/admin/AdminFairness"));
+const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+
+function PageLoading() {
+  return <p role="status" style={{ padding: "var(--space-8)", color: "var(--ink-2)", margin: 0 }}>Loading…</p>;
+}
 
 
 
@@ -46,6 +53,7 @@ function AdminOnly({ children }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <Suspense fallback={<PageLoading />}>
       <Routes>
         <Route path="/" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Signup />} />
@@ -114,6 +122,7 @@ export default function App() {
           }
         />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { riskKeyFromCategory } from "../components/RiskScale";
+import LegacyTag from "../components/LegacyTag";
 import StatusPill from "../components/StatusPill";
-import { fetchMe, fetchMyAssessments } from "../lib/api";
+import { getCurrentUser, fetchMyAssessments } from "../lib/api";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
 
@@ -23,7 +24,7 @@ export default function MyAssessments() {
     let cancelled = false;
     async function load() {
       try {
-        const [me, list] = await Promise.all([fetchMe(), fetchMyAssessments()]);
+        const [me, list] = await Promise.all([getCurrentUser(), fetchMyAssessments()]);
         if (cancelled) return;
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
@@ -73,128 +74,94 @@ export default function MyAssessments() {
 
   return (
     <AppShell user={user}>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          gap: "var(--space-4)",
-          flexWrap: "wrap",
-          marginBottom: "var(--space-8)",
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: "var(--text-2xl)" }}>My assessments</h1>
-          <p style={{ color: "var(--ink-2)", marginTop: "var(--space-2)" }}>
-            {loading ? "Loading…" : `${assessments.length} ${assessments.length === 1 ? "assessment" : "assessments"} on record`}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "var(--space-3)" }}>
-          <button type="button" className="btn btn-secondary" onClick={exportCSV} disabled={!assessments.length}>
-            Export CSV
-          </button>
-          <button type="button" className="btn btn-primary" onClick={() => navigate("/assessment/new")}>
-            New assessment
-          </button>
-        </div>
+      <header className="page-head">
+        <h1>My assessments</h1>
+        <p>{loading ? "Loading…" : `${assessments.length} ${assessments.length === 1 ? "assessment" : "assessments"} on record`}</p>
       </header>
 
-      {error && (
-        <p role="alert" style={{ color: "var(--risk-high)", marginBottom: "var(--space-6)" }}>
-          {error}
-        </p>
-      )}
+      {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
 
-      {!loading && !error && assessments.length === 0 && (
-        <section>
-          <p>You have not run an assessment yet.</p>
-          <div style={{ marginTop: "var(--space-6)" }}>
+      <section className="panel" aria-labelledby="history-heading">
+        <div className="panel-head">
+          <h2 id="history-heading">Assessment history</h2>
+          <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+            <button type="button" className="btn btn-secondary" onClick={exportCSV} disabled={!assessments.length}>
+              Export CSV
+            </button>
             <button type="button" className="btn btn-primary" onClick={() => navigate("/assessment/new")}>
-              Start an assessment
+              New assessment
             </button>
           </div>
-        </section>
-      )}
+        </div>
 
-      {assessments.length > 0 && (
-        <>
-          <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-6)" }}>
-            <label style={{ display: "grid", gap: "var(--space-1)", flex: "1 1 240px" }}>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-2)" }}>Search by business or ID</span>
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="e.g. Kamau Traders"
-                style={inputStyle}
-              />
-            </label>
-            <label style={{ display: "grid", gap: "var(--space-1)", minWidth: 180 }}>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-2)" }}>Risk band</span>
-              <select value={risk} onChange={(e) => setRisk(e.target.value)} style={inputStyle}>
-                <option value="all">All bands</option>
-                <option value="low">Low risk</option>
-                <option value="moderate">Moderate risk</option>
-                <option value="high">High risk</option>
-              </select>
-            </label>
-          </div>
+        {loading ? (
+          <p style={{ color: "var(--ink-2)", margin: 0 }}>Loading…</p>
+        ) : !error && assessments.length === 0 ? (
+          <p style={{ margin: 0 }}>You have not run an assessment yet. Use New assessment to start one.</p>
+        ) : assessments.length > 0 && (
+          <>
+            <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", marginBottom: "var(--space-4)", alignItems: "end" }}>
+              <label style={{ display: "grid", gap: "var(--space-1)", flex: "1 1 240px" }}>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-2)" }}>Search by business or ID</span>
+                <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="e.g. Kamau Traders" style={inputStyle} />
+              </label>
+              <label style={{ display: "grid", gap: "var(--space-1)", minWidth: 180 }}>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--ink-2)" }}>Risk band</span>
+                <select value={risk} onChange={(e) => setRisk(e.target.value)} style={inputStyle}>
+                  <option value="all">All bands</option>
+                  <option value="low">Low risk</option>
+                  <option value="moderate">Moderate risk</option>
+                  <option value="high">High risk</option>
+                </select>
+              </label>
+              <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: "0 0 var(--space-2) auto" }} aria-live="polite">
+                Showing {visible.length} of {assessments.length}
+              </p>
+            </div>
 
-          <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", marginBottom: "var(--space-3)" }} aria-live="polite">
-            Showing {visible.length} of {assessments.length}
-          </p>
-
-          {visible.length === 0 ? (
-            <p style={{ color: "var(--ink-2)" }}>No assessments match these filters.</p>
-          ) : (
-            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              {visible.map((item, i) => {
-                const key = riskKeyFromCategory(item.risk_category);
-                return (
-                  <li
-                    key={item.id || i}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) auto auto",
-                      alignItems: "center",
-                      gap: "var(--space-6)",
-                      padding: "var(--space-4) 0",
-                      borderTop: i ? "1px solid var(--line)" : "none",
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {item.business_name || "Business not named"}
-                      </div>
-                      <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
-                        <span className="num">{item.id}</span> · {item.created_at || "Recent"}
-                      </div>
-                      <div style={{ marginTop: "var(--space-2)" }}>
-                        <StatusPill status={item.review_status || "pending"} />
-                      </div>
-                    </div>
-
-                    <div style={{ textAlign: "right" }}>
-                      <div className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
-                        {item.credit_score ?? "–"}
-                      </div>
-                      {key && (
-                        <div style={{ fontSize: "var(--text-xs)", color: `var(${RISK_TOKEN[key]})`, fontWeight: 600 }}>
-                          {RISK_LABEL[key]}
-                        </div>
-                      )}
-                    </div>
-
-                    <button type="button" className="btn btn-secondary" onClick={() => openReport(item)}>
-                      View report
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </>
-      )}
+            {visible.length === 0 ? (
+              <p style={{ color: "var(--ink-2)", margin: 0 }}>No assessments match these filters.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Business</th><th>Date</th><th>Review</th>
+                      <th style={{ textAlign: "right" }}>Score</th><th>Risk</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((item, i) => {
+                      const key = riskKeyFromCategory(item.risk_category);
+                      return (
+                        <tr key={item.id || i}>
+                          <td style={{ minWidth: 180 }}>
+                            <div style={{ fontWeight: 600 }}>{item.business_name || "Business not named"}</div>
+                            <div style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
+                              <span className="num">{item.id}</span><LegacyTag record={item} />
+                            </div>
+                          </td>
+                          <td style={{ whiteSpace: "nowrap" }}>{item.created_at || "Recent"}</td>
+                          <td><StatusPill status={item.review_status || "pending"} /></td>
+                          <td className="num" style={{ textAlign: "right", fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
+                            {item.credit_score ?? "–"}
+                          </td>
+                          <td style={{ fontSize: "var(--text-xs)", color: key ? `var(${RISK_TOKEN[key]})` : "var(--ink-2)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                            {key ? RISK_LABEL[key] : "–"}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <button type="button" className="btn btn-secondary" onClick={() => openReport(item)}>View report</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </section>
     </AppShell>
   );
 }
@@ -202,7 +169,7 @@ export default function MyAssessments() {
 const inputStyle = {
   font: "inherit",
   padding: "var(--space-2) var(--space-3)",
-  border: "1px solid var(--line)",
+  border: "1px solid var(--line-strong)",
   borderRadius: "var(--radius)",
   background: "var(--surface)",
   color: "var(--ink)",

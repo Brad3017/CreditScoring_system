@@ -19,15 +19,17 @@ export function riskKeyFromCategory(category = "") {
   return null;
 }
 
-export default function RiskScale({ score, riskCategory }) {
+// The scale highlights the band the SCORE falls in. The pill shows the STORED risk_category,
+// which for records scored by an earlier model (isLegacy) may come from different cut-offs.
+export default function RiskScale({ score, riskCategory, isLegacy = false, modelVersion }) {
   if (typeof score !== "number" || Number.isNaN(score)) {
     return <p style={{ color: "var(--ink-2)" }}>No score yet. Submit an assessment to see it here.</p>;
   }
 
   const clamped = Math.max(MIN, Math.min(MAX, score));
   const position = ((clamped - MIN) / (MAX - MIN)) * 100;
-  const key = riskKeyFromCategory(riskCategory);
-  const active = BANDS.find((b) => b.key === key);
+  const active = BANDS.find((b) => clamped >= b.from && clamped <= b.to);
+  const stored = BANDS.find((b) => b.key === riskKeyFromCategory(riskCategory));
 
   return (
     <figure style={{ margin: 0 }}>
@@ -39,27 +41,27 @@ export default function RiskScale({ score, riskCategory }) {
           {score}
         </span>
         <span style={{ color: "var(--ink-2)", paddingBottom: "0.4rem" }}>out of {MAX}</span>
-        {active && (
+        {stored && (
           <span
             style={{
               marginLeft: "auto",
               alignSelf: "center",
               padding: "var(--space-1) var(--space-3)",
               borderRadius: 999,
-              background: `var(${active.soft})`,
-              color: `var(${active.color})`,
+              background: `var(${stored.soft})`,
+              color: `var(${stored.color})`,
               fontWeight: 600,
               fontSize: "var(--text-sm)",
             }}
           >
-            {active.label}
+            {stored.label}
           </span>
         )}
       </div>
 
       <div
         role="img"
-        aria-label={`Score ${score} out of ${MAX}${active ? `, ${active.label}` : ""}`}
+        aria-label={`Score ${score} out of ${MAX}, in the ${active.label.toLowerCase()} band of the scale`}
         style={{ position: "relative", marginTop: "var(--space-6)", paddingTop: "var(--space-4)" }}
       >
         {/* Track: each band is a segment sized to its share of the scale */}
@@ -81,23 +83,26 @@ export default function RiskScale({ score, riskCategory }) {
           })}
         </div>
 
-        {/* Marker: sits on the track at the score's position */}
+        {/* Marker: the line sits exactly at the score's position. The number badge shifts
+            sideways near the ends of the scale (0% at 300, 100% at 850) so it never overflows. */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
             left: `${position}%`,
             top: 0,
-            transform: "translateX(-50%)",
+            transform: "translateX(-1px)",
+            width: 0,
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
+            alignItems: "flex-start",
             transition: "left 600ms ease-out",
           }}
         >
           <span
             className="num"
             style={{
+              transform: `translateX(-${position}%)`,
               fontSize: "var(--text-xs)",
               fontWeight: 600,
               background: "var(--ink)",
@@ -109,7 +114,8 @@ export default function RiskScale({ score, riskCategory }) {
           >
             {score}
           </span>
-          <span style={{ width: 2, height: 22, background: "var(--ink)", borderRadius: 1 }} />
+          {/* Ends just below the track, above the band labels, so it never crosses their text. */}
+          <span style={{ width: 2, height: 14, background: "var(--ink)", borderRadius: 1 }} />
         </div>
       </div>
 
@@ -135,6 +141,12 @@ export default function RiskScale({ score, riskCategory }) {
           );
         })}
       </div>
+
+      {isLegacy && (
+        <p role="note" style={{ margin: "var(--space-4) 0 0", padding: "var(--space-3) var(--space-4)", border: "1px solid var(--line)", borderRadius: "var(--radius)", color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
+          Scored with an earlier model ({modelVersion || "xgb_msme_v1"}) that used different risk bands. The label is kept as originally recorded.
+        </p>
+      )}
     </figure>
   );
 }

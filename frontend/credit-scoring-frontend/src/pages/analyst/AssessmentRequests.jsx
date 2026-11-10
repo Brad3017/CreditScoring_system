@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../../components/AnalystLayout";
 import StatusPill from "../../components/StatusPill";
 import { riskKeyFromCategory } from "../../components/RiskScale";
+import LegacyTag from "../../components/LegacyTag";
 import { card, muted, inputStyle, th, td } from "../../components/analystUi";
-import { fetchMe, fetchAllAssessments } from "../../lib/api";
+import { getCurrentUser, fetchAllAssessments } from "../../lib/api";
 
 const RISK_LABEL = { low: "Low risk", moderate: "Moderate", high: "High risk" };
 const RISK_TOKEN = { low: "--risk-low", moderate: "--risk-moderate", high: "--risk-high" };
@@ -22,7 +23,7 @@ export default function AssessmentRequests() {
   useEffect(() => {
     (async () => {
       try {
-        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([getCurrentUser(), fetchAllAssessments()]);
         setUser(me);
         setRows(Array.isArray(all) ? all : []);
       } catch (e) {
@@ -95,7 +96,7 @@ export default function AssessmentRequests() {
             {status === "pending" ? "Nothing is waiting for review." : "No requests match these filters."}
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -111,7 +112,7 @@ export default function AssessmentRequests() {
                     <tr key={r.pk}>
                       <td style={td}>
                         <div style={{ fontWeight: 600 }}>{r.business_name || "Business not named"}</div>
-                        <div style={muted}><span className="num">{r.id}</span> · {r.sector}, {r.county}</div>
+                        <div style={muted}><span className="num">{r.id}</span> · {r.sector}, {r.county}<LegacyTag record={r} /></div>
                       </td>
                       <td style={td}>{r.created_at}</td>
                       <td style={td}><span className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>{r.credit_score}</span></td>

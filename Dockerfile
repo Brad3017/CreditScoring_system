@@ -19,5 +19,6 @@ RUN SECRET_KEY=build-only python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-# 2 workers: each one loads the XGBoost model and the SHAP explainer into memory.
-CMD ["sh", "-c", "python manage.py migrate && gunicorn credit_scoring.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 90"]
+# 2 workers: each one loads the XGBoost model and the SHAP explainer into memory, so keep it at 2.
+# 4 threads per worker (gthread) so a page's parallel API calls are not queued behind each other.
+CMD ["sh", "-c", "python manage.py migrate && gunicorn credit_scoring.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 4 --worker-class gthread --timeout 90"]

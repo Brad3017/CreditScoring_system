@@ -15,7 +15,8 @@ export function ChartCard({ title, subtitle, table, children }) {
       {table && (
         <details style={{ marginTop: "var(--space-4)" }}>
           <summary style={{ ...muted, cursor: "pointer" }}>View as table</summary>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "var(--space-2)" }}>
+          <div className="table-wrap" style={{ marginTop: "var(--space-2)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>{table.head.map((h) => <th key={h} style={th}>{h}</th>)}</tr>
             </thead>
@@ -25,6 +26,7 @@ export function ChartCard({ title, subtitle, table, children }) {
               ))}
             </tbody>
           </table>
+          </div>
         </details>
       )}
     </section>

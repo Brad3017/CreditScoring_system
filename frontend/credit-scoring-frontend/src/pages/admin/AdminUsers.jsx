@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { card, muted, inputStyle, th, td, fmtDateTime } from "../../components/analystUi";
-import { fetchMe, fetchAdminUsers, updateAdminUser } from "../../lib/api";
+import { getCurrentUser, fetchAdminUsers, updateAdminUser } from "../../lib/api";
 
 const ROLES = [["owner", "MSME owner"], ["analyst", "Credit analyst"], ["admin", "Administrator"]];
 
@@ -16,7 +16,7 @@ export default function AdminUsers() {
   const [savingId, setSavingId] = useState(null);
 
   useEffect(() => {
-    fetchMe().then(setMe).catch(() => {});
+    getCurrentUser().then(setMe).catch(() => {});
     fetchAdminUsers().then(setUsers).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
@@ -71,7 +71,7 @@ export default function AdminUsers() {
         </div>
 
         {loading ? <p style={{ color: "var(--ink-2)" }}>Loading…</p> : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>

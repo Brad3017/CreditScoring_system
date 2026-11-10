@@ -18,12 +18,6 @@ from . import services
 
 User = get_user_model()
 
-# Bands used by services.evaluate_credit_request (keep in sync with that file).
-RISK_BANDS = [
-    {"label": "Low Risk", "rule": "probability of default below 0.25"},
-    {"label": "Moderate Risk", "rule": "0.25 to below 0.40"},
-    {"label": "High Risk", "rule": "0.40 and above"},
-]
 MIN_GROUP = 5  # groups smaller than this are shown but not compared
 
 
@@ -191,8 +185,8 @@ class AdminModelView(APIView):
             "target": meta.get("target"),
             "metadata_threshold": meta.get("threshold"),
             "features": meta.get("features", []),
-            "risk_bands": RISK_BANDS,
-            "score_formula": "credit score = 850 - (probability of default x 550), limited to 300-850",
+            "risk_bands": services.risk_band_rules(),
+            "score_formula": "credit score = " + meta.get("score", {}).get("formula", "not recorded") + ", where pd is the probability of default",
             "versions_in_use": [{"version": v["model_version"], "count": v["n"]} for v in versions],
             "report": report,
         })

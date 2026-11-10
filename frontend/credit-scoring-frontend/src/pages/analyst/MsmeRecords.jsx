@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import AnalystLayout from "../../components/AnalystLayout";
 import StatusPill from "../../components/StatusPill";
 import { card, muted, inputStyle, th, td, kes } from "../../components/analystUi";
-import { fetchMe, fetchAllAssessments } from "../../lib/api";
+import { getCurrentUser, fetchAllAssessments } from "../../lib/api";
 
 const RISK_COLOR = { low: "var(--risk-low)", moderate: "var(--risk-moderate)", medium: "var(--risk-moderate)", high: "var(--risk-high)" };
 const riskKey = (c = "") => Object.keys(RISK_COLOR).find((k) => c.toLowerCase().includes(k));
@@ -30,7 +30,7 @@ export default function MsmeRecords() {
   useEffect(() => {
     (async () => {
       try {
-        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([getCurrentUser(), fetchAllAssessments()]);
         setUser(me);
         setAssessments(Array.isArray(all) ? all : []);
       } catch (e) {
@@ -107,7 +107,7 @@ export default function MsmeRecords() {
         ) : visible.length === 0 ? (
           <p style={{ color: "var(--ink-2)" }}>No businesses match these filters.</p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-wrap">
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>

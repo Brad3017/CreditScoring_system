@@ -2,7 +2,7 @@
    Import once in the app entry file: import "./styles/tokens.css";
    Light is the default. Dark mode is opt-in with <html data-theme="dark">. */
 
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap");
+/* Fonts are self-hosted (see main.jsx): no request to Google Fonts. */
 
 :root {
   color-scheme: light;
@@ -143,12 +143,14 @@ h3 {
 }
 
 /* Layout pieces */
+/* Identical to .panel (Phase 2B, B3). */
 .card {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  padding: var(--space-8);
+  padding: var(--space-6);
+  min-width: 0;
 }
 
 .two-col {
@@ -180,9 +182,6 @@ h3 {
   color: #ffffff;
 }
 
-.stack > * + * {
-  margin-top: var(--space-12);
-}
 
 .rule {
   border: 0;
@@ -274,3 +273,71 @@ h3 {
 }
 
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* layout helpers v3 */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--space-6); box-shadow: var(--shadow); min-width: 0; }
+.panel-title { margin: 0 0 var(--space-4); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); font-size: var(--text-lg); }
+.split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-6); align-items: start; }
+.stack { display: grid; gap: var(--space-6); min-width: 0; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+@media print { .no-print { display: none !important; } }
+
+/* ---------- Phase 2B layout: owner shell, page, panels, tables, forms ---------- */
+
+/* B1: full-width sticky top bar with a wider inner container */
+.app-header { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--line-strong); }
+.app-header-inner { max-width: 1440px; margin: 0 auto; padding: 0 var(--space-8); display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: var(--space-8); }
+.app-brand { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.app-brand-mark { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #ffffff; font-size: 1.05rem; }
+.app-nav { display: flex; justify-content: flex-start; align-items: stretch; gap: var(--space-6); height: 64px; min-width: 0; }
+.app-nav a { display: flex; align-items: center; color: var(--ink-2); font-weight: 500; text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.app-nav a:hover { color: var(--ink); }
+.app-nav a.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.app-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app-user { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.app-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 600; font-size: var(--text-xs); }
+.app-user-text { min-width: 0; max-width: 220px; font-size: var(--text-xs); line-height: 1.3; }
+.app-user-text > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-user-name { font-weight: 600; }
+.app-user-email { color: var(--ink-2); }
+.app-divider { width: 1px; align-self: stretch; margin: var(--space-4) 0; background: var(--line); }
+
+/* B2: page width and spacing */
+.app-main { max-width: 1320px; margin: 0 auto; padding: var(--space-8); display: grid; gap: var(--space-6); min-width: 0; }
+.page-head { padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
+.page-head h1 { margin: 0; font-size: var(--text-2xl); }
+.page-head p { margin: var(--space-2) 0 0; color: var(--ink-2); }
+
+/* B3: panel header, tables, forms, stat tiles */
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); flex-wrap: wrap; padding-bottom: var(--space-3); margin-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
+.panel-head h2 { margin: 0; font-size: var(--text-lg); }
+/* position: relative keeps absolutely positioned children (e.g. .sr-only labels) inside the scroll area. */
+.table-wrap { position: relative; border: 1px solid var(--line-strong); border-radius: var(--radius); overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; }
+.table th { text-align: left; padding: var(--space-3) var(--space-4); font-size: var(--text-xs); font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--line-strong); white-space: nowrap; background: var(--surface); }
+.table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tbody tr:last-child td { border-bottom: 0; }
+/* Staff pages style cells inline; the wrapper border replaces the last row divider. */
+.table-wrap tbody tr:last-child td { border-bottom: 0 !important; }
+.form-group { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--space-6); margin: 0; min-width: 0; background: var(--surface); }
+.form-group > legend { padding: 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { border: 1px solid var(--line-strong); border-radius: var(--radius); }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); align-items: stretch; }
+.stat { height: 100%; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--space-5); min-width: 0; }
+
+@media (max-width: 1100px) {
+  .app-header-inner { padding: 0 var(--space-5); column-gap: var(--space-5); }
+}
+@media (max-width: 900px) {
+  .app-header-inner { grid-template-columns: 1fr auto; row-gap: 0; padding-top: var(--space-3); }
+  .app-nav { grid-column: 1 / -1; grid-row: 2; height: 48px; overflow-x: auto; scrollbar-width: thin; }
+  .app-user-email { display: none; }
+  .app-user-text { max-width: 140px; }
+  .app-main { padding: var(--space-5); }
+}
+@media (max-width: 480px) {
+  .app-user-text, .app-divider { display: none; }
+}

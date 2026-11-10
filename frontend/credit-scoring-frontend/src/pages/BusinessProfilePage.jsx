@@ -92,15 +92,15 @@ export default function BusinessProfilePage() {
     setNotice("");
     setError("");
     try {
-      // 1. Personal details
-      const updatedUser = await updateMe(personal);
-
-      // 2. Business details
-      await saveBusinessProfile({
-        ...business,
-        business_age_years: Number(business.business_age_years),
-        employees_count: Number(business.employees_count),
-      });
+      // Personal and business details are independent, so save them in parallel.
+      const [updatedUser] = await Promise.all([
+        updateMe(personal),
+        saveBusinessProfile({
+          ...business,
+          business_age_years: Number(business.business_age_years),
+          employees_count: Number(business.employees_count),
+        }),
+      ]);
 
       setUser(updatedUser);
       setNotice("Your profile is saved.");
@@ -113,64 +113,65 @@ export default function BusinessProfilePage() {
 
   return (
     <AppShell user={user}>
-      <h1 style={{ fontSize: "var(--text-2xl)" }}>Business profile</h1>
-      <p style={{ color: "var(--ink-2)", margin: "var(--space-2) 0 var(--space-8)" }}>
-        Your personal details and the business they belong to. These are used when you run an assessment.
-      </p>
+      <header className="page-head">
+        <h1>Business profile</h1>
+        <p>Your personal details and the business they belong to. These are used when you run an assessment.</p>
+      </header>
 
-      {loading && <p style={{ color: "var(--ink-2)" }}>Loading…</p>}
-      {error && <p role="alert" style={{ color: "var(--risk-high)", marginBottom: "var(--space-6)" }}>{error}</p>}
+      {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
 
-      {!loading && (
-        <form onSubmit={save} noValidate>
-          <section aria-labelledby="personal-heading">
-            <h2 id="personal-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Your details</h2>
-            <div style={grid}>
-              <Field label="Full name" name="full_name" value={personal.full_name} onChange={onPersonal} error={errors.full_name} />
-              <Field label="Email" name="email" value={personal.email} disabled hint="Email cannot be changed here." />
-              <Field label="National ID number" name="national_id" value={personal.national_id} onChange={onPersonal} error={errors.national_id} />
-              <Field label="Phone (M-Pesa)" name="phone" value={personal.phone} onChange={onPersonal} error={errors.phone} placeholder="+254 700 000 000" />
-              <SelectField label="Your county" name="county" value={personal.county} onChange={onPersonal} options={COUNTIES} />
+      <section className="panel" aria-busy={loading}>
+        {loading ? (
+          <p style={{ color: "var(--ink-2)", margin: 0 }}>Loading…</p>
+        ) : (
+          <form onSubmit={save} noValidate style={{ display: "grid", gap: "var(--space-6)" }}>
+            <fieldset className="form-group">
+              <legend>Your details</legend>
+              <div style={grid}>
+                <Field label="Full name" name="full_name" value={personal.full_name} onChange={onPersonal} error={errors.full_name} />
+                <Field label="Email" name="email" value={personal.email} disabled hint="Email cannot be changed here." />
+                <Field label="National ID number" name="national_id" value={personal.national_id} onChange={onPersonal} error={errors.national_id} />
+                <Field label="Phone (M-Pesa)" name="phone" value={personal.phone} onChange={onPersonal} error={errors.phone} placeholder="+254 700 000 000" />
+                <SelectField label="Your county" name="county" value={personal.county} onChange={onPersonal} options={COUNTIES} />
+              </div>
+            </fieldset>
+
+            <fieldset className="form-group">
+              <legend>Your business</legend>
+              <div style={grid}>
+                <Field label="Business name" name="business_name" value={business.business_name} onChange={onBusiness} error={errors.business_name} />
+                <SelectField label="Sector" name="sector" value={business.sector} onChange={onBusiness}
+                  options={["Retail", "Manufacturing", "Services", "Agriculture"]} />
+                <SelectField label="Business county" name="county" value={business.county} onChange={onBusiness} options={COUNTIES} error={errors.county} />
+                <SelectField label="Operating environment" name="location_type" value={business.location_type} onChange={onBusiness}
+                  options={[["Urban", "Urban"], ["Rural", "Rural"]]} />
+                <SelectField label="Legal structure" name="legal_status" value={business.legal_status} onChange={onBusiness}
+                  options={[["Sole", "Sole proprietorship"], ["Partnership", "Partnership"], ["Limited", "Limited company"]]} />
+                <Field label="Years trading" name="business_age_years" type="number" min="0" value={business.business_age_years} onChange={onBusiness} error={errors.business_age_years} />
+                <Field label="Number of employees" name="employees_count" type="number" min="0" value={business.employees_count} onChange={onBusiness} error={errors.employees_count} />
+              </div>
+            </fieldset>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", flexWrap: "wrap", paddingTop: "var(--space-5)", borderTop: "1px solid var(--line)" }}>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? "Saving…" : "Save profile"}
+              </button>
+              {notice && <p role="status" style={{ color: "var(--ink-2)", margin: 0 }}>{notice}</p>}
             </div>
-          </section>
-
-          <hr className="rule" />
-
-          <section aria-labelledby="business-heading">
-            <h2 id="business-heading" style={{ fontSize: "var(--text-xl)", marginBottom: "var(--space-4)" }}>Your business</h2>
-            <div style={grid}>
-              <Field label="Business name" name="business_name" value={business.business_name} onChange={onBusiness} error={errors.business_name} />
-              <SelectField label="Sector" name="sector" value={business.sector} onChange={onBusiness}
-                options={["Retail", "Manufacturing", "Services", "Agriculture"]} />
-              <SelectField label="Business county" name="county" value={business.county} onChange={onBusiness} options={COUNTIES} error={errors.county} />
-              <SelectField label="Operating environment" name="location_type" value={business.location_type} onChange={onBusiness}
-                options={[["Urban", "Urban"], ["Rural", "Rural"]]} />
-              <SelectField label="Legal structure" name="legal_status" value={business.legal_status} onChange={onBusiness}
-                options={[["Sole", "Sole proprietorship"], ["Partnership", "Partnership"], ["Limited", "Limited company"]]} />
-              <Field label="Years trading" name="business_age_years" type="number" min="0" value={business.business_age_years} onChange={onBusiness} error={errors.business_age_years} />
-              <Field label="Number of employees" name="employees_count" type="number" min="0" value={business.employees_count} onChange={onBusiness} error={errors.employees_count} />
-            </div>
-          </section>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)", marginTop: "var(--space-8)", flexWrap: "wrap" }}>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? "Saving…" : "Save profile"}
-            </button>
-            {notice && <p role="status" style={{ color: "var(--ink-2)" }}>{notice}</p>}
-          </div>
-        </form>
-      )}
+          </form>
+        )}
+      </section>
     </AppShell>
   );
 }
 
-const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "var(--space-6)" };
+const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "var(--space-6)" };
 
 const controlStyle = {
   font: "inherit",
   width: "100%",
   padding: "var(--space-2) var(--space-3)",
-  border: "1px solid var(--line)",
+  border: "1px solid var(--line-strong)",
   borderRadius: "var(--radius)",
   background: "var(--surface)",
   color: "var(--ink)",

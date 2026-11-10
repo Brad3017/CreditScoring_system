@@ -57,21 +57,50 @@ export async function submitAssessment(payload) {
   }
 
   if (!res.ok) {
-    throw new Error(body.detail || body.error || JSON.stringify(body));
+    // Serializer errors arrive as { field: ["message", ...] }; show the messages, not raw JSON.
+    const fieldMessages = Object.values(body || {}).flat().filter((m) => typeof m === "string");
+    throw new Error(body.detail || body.error || fieldMessages.join(" ") || `Request failed (HTTP ${res.status}).`);
   }
   return body;
 }
 
-export function saveSession(access, refresh, role) {
+export function saveSession(access, refresh, role, user) {
   if (access) localStorage.setItem("access", access);
   if (refresh) localStorage.setItem("refresh", refresh);
   if (role) localStorage.setItem("role", role);
+  if (user) storeUser(user);
 }
 
 export function clearSession() {
   localStorage.removeItem("access");
   localStorage.removeItem("refresh");
   localStorage.removeItem("role");
+  localStorage.removeItem("user");
+}
+
+// The signed-in user's display details (id, email, full_name, role), kept with the session
+// so the first page does not need a /auth/me/ round trip.
+function storeUser(user) {
+  try {
+    const prev = JSON.parse(localStorage.getItem("user") || "{}");
+    localStorage.setItem("user", JSON.stringify({ ...prev, ...user }));
+  } catch {
+    // Storage unavailable: pages fall back to fetchMe().
+  }
+}
+
+export function getSessionUser() {
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
+}
+
+// Stored user if there is one, otherwise ask the server. Use fetchMe() to force a refresh.
+export function getCurrentUser() {
+  const cached = getSessionUser();
+  return cached?.email ? Promise.resolve(cached) : fetchMe();
 }
 
 export function getRole() {
@@ -87,7 +116,9 @@ export async function fetchMe() {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new Error("Unauthorized");
-  return res.json();
+  const me = await res.json();
+  storeUser(me);
+  return me;
 }
 
 export async function fetchAllAssessments() {
@@ -111,6 +142,7 @@ export async function updateMe(data) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || "Your personal details could not be saved.");
+  storeUser(body);
   return body;
 }
 

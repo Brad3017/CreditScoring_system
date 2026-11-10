@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import AnalystLayout from "../../components/AnalystLayout";
 import { ChartCard, BarList, Columns, Split, Empty } from "../../components/charts";
-import { fetchMe, fetchAllAssessments } from "../../lib/api";
+import { getCurrentUser, fetchAllAssessments } from "../../lib/api";
 
 const RISKS = [
   { key: "Low Risk", label: "Low risk", color: "var(--risk-low)" },
@@ -33,7 +33,7 @@ export default function RiskAnalytics() {
   useEffect(() => {
     (async () => {
       try {
-        const [me, all] = await Promise.all([fetchMe(), fetchAllAssessments()]);
+        const [me, all] = await Promise.all([getCurrentUser(), fetchAllAssessments()]);
         setUser(me);
         setRows(Array.isArray(all) ? all : []);
       } catch (e) {
