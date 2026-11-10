@@ -1,118 +1,131 @@
 {
-    "model_name": "Tuned_XGBoost_MSME_Credit_Scorer",
-    "target": "target_missed_payment",
-    "threshold": 0.5,
-    "features": [
-        "sector",
-        "business_age_years",
-        "legal_status",
-        "location_type",
-        "employees_count",
-        "existing_loans",
-        "prior_loan_count",
-        "late_payment_history",
-        "collateral_level",
-        "cashflow_stability",
-        "repayment_confidence",
-        "owner_education",
-        "days_payable_outstanding",
-        "monthly_revenue_kes",
-        "monthly_profit_kes",
-        "county"
-    
+  "model_name": "XGBoost MSME credit scorer",
+  "model_version": "xgb_msme_v2",
+  "target": "target_missed_payment",
+  "features": [
+    "sector",
+    "legal_status",
+    "location_type",
+    "loan_purpose",
+    "business_age_years",
+    "employees_count",
+    "monthly_revenue_kes",
+    "profit_margin",
+    "loan_amount_kes",
+    "loan_to_revenue",
+    "tenure_months",
+    "existing_loans",
+    "prior_loan_count",
+    "late_payment_history",
+    "collateral_level",
+    "cashflow_stability",
+    "repayment_confidence",
+    "owner_education",
+    "days_payable_outstanding"
+  ],
+  "feature_labels": {
+    "sector": "Sector",
+    "legal_status": "Legal structure",
+    "location_type": "Urban or rural",
+    "loan_purpose": "Loan purpose",
+    "business_age_years": "Business age",
+    "employees_count": "Employees",
+    "monthly_revenue_kes": "Monthly revenue",
+    "profit_margin": "Profit margin",
+    "loan_amount_kes": "Loan amount",
+    "loan_to_revenue": "Loan size relative to revenue",
+    "tenure_months": "Repayment period",
+    "existing_loans": "Has existing loans",
+    "prior_loan_count": "Number of previous loans",
+    "late_payment_history": "Late payment history",
+    "collateral_level": "Collateral",
+    "cashflow_stability": "Cash-flow stability",
+    "repayment_confidence": "Repayment confidence",
+    "owner_education": "Owner education",
+    "days_payable_outstanding": "Days taken to pay suppliers"
+  },
+  "nominal_categories": {
+    "sector": [
+      "Agriculture",
+      "Manufacturing",
+      "Retail",
+      "Services"
     ],
-    "categorical_columns": [
-        "sector",
-        "legal_status",
-        "location_type",
-        "county"
+    "legal_status": [
+      "Limited",
+      "Partnership",
+      "Sole"
     ],
-    "county_categories": [
-        "Baringo",
-        "Bomet",
-        "Bungoma",
-        "Busia",
-        "Elgeyo Marakwet",
-        "Embu",
-        "Garissa",
-        "Homa Bay",
-        "Isiolo",
-        "Kajiado",
-        "Kakamega",
-        "Kericho",
-        "Kiambu",
-        "Kilifi",
-        "Kirinyaga",
-        "Kisii",
-        "Kisumu",
-        "Kitui",
-        "Kwale",
-        "Laikipia",
-        "Lamu",
-        "Machakos",
-        "Makueni",
-        "Mandera",
-        "Marsabit",
-        "Meru",
-        "Migori",
-        "Mombasa",
-        "Murang'a",
-        "Nairobi",
-        "Nakuru",
-        "Nandi",
-        "Narok",
-        "Nyamira",
-        "Nyandarua",
-        "Nyeri",
-        "Samburu",
-        "Siaya",
-        "Taita Taveta",
-        "Tana River",
-        "Tharaka Nithi",
-        "Trans Nzoia",
-        "Turkana",
-        "Uasin Gishu",
-        "Vihiga",
-        "Wajir",
-        "West Pokot"
+    "location_type": [
+      "Rural",
+      "Urban"
     ],
-    "sector_categories": [
-        "Agriculture",
-        "Manufacturing",
-        "Retail",
-        "Services"
-    ],
-    "legal_status_categories": [
-        "Limited",
-        "Partnership",
-        "Sole"
-    ],
-    "location_type_categories": [
-        "Rural",
-        "Urban"
-    ],
-    "ordinal_mappings": {
-        "collateral_level": {
-            "Low": 0,
-            "Moderate": 1,
-            "High": 2
-        },
-        "owner_education": {
-            "Primary": 0,
-            "Secondary": 1,
-            "Higher Secondary": 2,
-            "Bachelor's": 3,
-            "Master's": 4
-        },
-        "late_payment_history": {
-            "Never": 0,
-            "Rarely": 1,
-            "Sometimes": 2,
-            "Often": 3
-        },
-        "existing_loans": {
-            "No": 0,
-            "Yes": 1
-        }
+    "loan_purpose": [
+      "Equipment",
+      "Expansion",
+      "Inventory",
+      "Renovation",
+      "Working capital"
+    ]
+  },
+  "nominal_encoding": "integer code = position in the category list",
+  "ordinal_mappings": {
+    "late_payment_history": {
+      "Never": 0,
+      "Rarely": 1,
+      "Sometimes": 2
+    },
+    "collateral_level": {
+      "Low": 0,
+      "Moderate": 1,
+      "High": 2
+    },
+    "owner_education": {
+      "Primary": 0,
+      "Secondary": 1,
+      "Higher Secondary": 2,
+      "Bachelor's": 3,
+      "Master's": 4
+    },
+    "existing_loans": {
+      "No": 0,
+      "Yes": 1
     }
+  },
+  "derived_features": {
+    "profit_margin": "monthly_profit_kes / monthly_revenue_kes",
+    "loan_to_revenue": "loan_amount_kes / monthly_revenue_kes"
+  },
+  "excluded_columns": {
+    "county": "randomly assigned in the synthetic data; carries no information",
+    "business_id": "identifier"
+  },
+  "score": {
+    "formula": "clip(round(850 - 550 * pd), 300, 850)",
+    "min": 300,
+    "max": 850,
+    "span": 550
+  },
+  "risk_bands": [
+    {
+      "label": "Low Risk",
+      "pd_max_inclusive": 0.272727,
+      "score_range": "700-850"
+    },
+    {
+      "label": "Moderate Risk",
+      "pd_between": [
+        0.272727,
+        0.638182
+      ],
+      "score_range": "500-699"
+    },
+    {
+      "label": "High Risk",
+      "pd_min_inclusive": 0.638182,
+      "score_range": "300-499"
+    }
+  ],
+  "shap_units": "log-odds of default; positive raises risk",
+  "training_rows": 5000
 }
