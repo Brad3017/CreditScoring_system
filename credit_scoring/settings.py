@@ -180,6 +180,11 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
+    # Only views that set throttle_classes are limited. Counts live in the default cache,
+    # which is per Gunicorn worker process.
+    "DEFAULT_THROTTLE_RATES": {
+        "simulate": "60/min",
+    },
 }
 
 

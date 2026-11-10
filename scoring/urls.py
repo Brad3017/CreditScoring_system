@@ -6,6 +6,8 @@ from .views import (
     AssessmentDetailView,
     ReviewAssessmentView,
     BusinessProfileView,
+    SimulateAssessmentView,
+    AssessmentInputsView,
 )
 from .admin_views import (
     AdminOverviewView, AdminFairnessView, AdminModelView, AdminExportView,
@@ -16,6 +18,8 @@ urlpatterns = [
     path("assessments/", AssessmentListView.as_view(), name="assessment_list"),
     path("assessments/all/", AllAssessmentsAnalystView.as_view(), name="analyst_assessment_list"),
     path("assessments/<int:pk>/", AssessmentDetailView.as_view(), name="assessment_detail"),
+    path("simulate/", SimulateAssessmentView.as_view(), name="simulate_assessment"),
+    path("assessments/<int:pk>/inputs/", AssessmentInputsView.as_view(), name="assessment_inputs"),
     path("assessments/<int:pk>/review/", ReviewAssessmentView.as_view(), name="assessment_review"),
     path("business-profile/", BusinessProfileView.as_view(), name="business_profile"),
     path("admin/overview/", AdminOverviewView.as_view(), name="admin_overview"),

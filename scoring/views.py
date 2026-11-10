@@ -4,12 +4,14 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import UserRateThrottle
 
 from .models import CreditRequest, CreditAssessment, BusinessProfile
 from .serializers import (
     CreditRequestSerializer,
     CreditAssessmentSerializer,
     BusinessProfileSerializer,
+    MODEL_INPUT_FIELDS,
 )
 from .services import evaluate_credit_request, MODEL_VERSION
 
@@ -207,6 +209,72 @@ class SubmitCreditAssessmentView(APIView):
         # Not stored: only meaningful at the moment of scoring.
         body["out_of_range"] = results["out_of_range"]
         return Response(body, status=status.HTTP_201_CREATED)
+
+
+class IsOwnerOrStaff(IsAuthenticated):
+    """Any signed-in owner, analyst or admin."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        return request.user.role in ("owner", "analyst", "admin")
+
+
+class SimulateRateThrottle(UserRateThrottle):
+    # Rate is set in settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["simulate"].
+    scope = "simulate"
+
+
+# Fields returned by a simulation. Nothing else from the scoring result is exposed.
+SIMULATION_FIELDS = (
+    "credit_score", "risk_category", "probability_of_default", "shap_values",
+    "out_of_range", "recommended_limit", "monthly_repayment_estimate",
+)
+
+
+class SimulateAssessmentView(APIView):
+    """Scores a what-if payload. Validates exactly like assess/, but writes nothing to the database."""
+    permission_classes = [IsOwnerOrStaff]
+    throttle_classes = [SimulateRateThrottle]
+
+    def post(self, request):
+        serializer = CreditRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # An unsaved instance: only used to build the model inputs, never saved.
+            results = evaluate_credit_request(CreditRequest(**serializer.validated_data))
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {"error": f"Scoring engine error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response({k: results[k] for k in SIMULATION_FIELDS}, status=status.HTTP_200_OK)
+
+
+class AssessmentInputsView(APIView):
+    """The stored answers behind one of the signed-in user's OWN assessments (404 for anyone else's)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        a = (
+            CreditAssessment.objects.select_related("request")
+            .filter(pk=pk, request__user=request.user)
+            .first()
+        )
+        if a is None:
+            return Response({"detail": "Not found"}, status=404)
+        r = a.request
+        body = {}
+        for field in MODEL_INPUT_FIELDS:
+            value = getattr(r, field)
+            # Decimals as plain numbers, so the payload can be posted straight back to simulate/.
+            body[field] = float(value) if field in ("loan_amount", "monthly_revenue_kes", "monthly_profit_kes") else value
+        body["business_name"] = r.business_name
+        body["county"] = r.county
+        return Response(body)
 
 
 class AllAssessmentsAnalystView(APIView):

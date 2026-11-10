@@ -296,3 +296,83 @@ class ListQueryCountTests(TestCase):
             self.assertGreater(rows_large, rows_small)
             self.assertEqual(small, large, f"{url}: {small} queries for {rows_small} rows, {large} for {rows_large}")
             CreditAssessment.objects.all().delete()
+
+
+class SimulateEndpointTests(TestCase):
+    """What-if scoring: same validation as assess/, but nothing is written to the database."""
+    url = "/api/scoring/simulate/"
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # throttle counts live in the cache
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="sim", email="sim@test.ke", password="x", role="owner")
+        self.other = User.objects.create_user(username="sim2", email="sim2@test.ke", password="x", role="owner")
+
+    def counts(self):
+        from .models import BusinessProfile
+        return CreditRequest.objects.count(), CreditAssessment.objects.count(), BusinessProfile.objects.count()
+
+    def test_returns_score_and_saves_nothing(self):
+        self.client.force_authenticate(self.owner)
+        before = self.counts()
+        res = self.client.post(self.url, LOW_RISK, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(set(body), {
+            "credit_score", "risk_category", "probability_of_default", "shap_values",
+            "out_of_range", "recommended_limit", "monthly_repayment_estimate",
+        })
+        self.assertTrue(300 <= body["credit_score"] <= 850)
+        self.assertEqual(len(body["shap_values"]), 19)
+        self.assertEqual(self.counts(), before)
+
+    def test_staff_may_simulate(self):
+        analyst = User.objects.create_user(username="sa", email="sa@test.ke", password="x", role="analyst")
+        self.client.force_authenticate(analyst)
+        self.assertEqual(self.client.post(self.url, LOW_RISK, format="json").status_code, 200)
+
+    def test_anonymous_is_refused(self):
+        self.assertEqual(self.client.post(self.url, LOW_RISK, format="json").status_code, 401)
+
+    def test_invalid_input_returns_400(self):
+        self.client.force_authenticate(self.owner)
+        for bad in ({"late_payment_history": "Often"}, {"monthly_revenue_kes": 0}, {"tenure_months": 0}, {"cashflow_stability": 9}):
+            res = self.client.post(self.url, {**LOW_RISK, **bad}, format="json")
+            self.assertEqual(res.status_code, 400, bad)
+        self.assertEqual(self.counts(), (0, 0, 0))
+
+    def submit(self, user, payload):
+        self.client.force_authenticate(user)
+        res = self.client.post("/api/scoring/assess/", payload, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        return res.json()
+
+    def test_owner_cannot_fetch_another_owners_inputs(self):
+        theirs = self.submit(self.other, LOW_RISK)
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.get(f"/api/scoring/assessments/{theirs['pk']}/inputs/").status_code, 404)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.get(f"/api/scoring/assessments/{theirs['pk']}/inputs/").status_code, 200)
+
+    def test_stored_inputs_reproduce_stored_score(self):
+        for payload in (LOW_RISK, HIGH_RISK):
+            stored = self.submit(self.owner, payload)
+            inputs = self.client.get(f"/api/scoring/assessments/{stored['pk']}/inputs/")
+            self.assertEqual(inputs.status_code, 200)
+            sim = self.client.post(self.url, inputs.json(), format="json")
+            self.assertEqual(sim.status_code, 200, sim.content)
+            self.assertEqual(sim.json()["credit_score"], stored["credit_score"])
+            self.assertEqual(sim.json()["risk_category"], stored["risk_category"])
+            self.assertEqual(sim.json()["recommended_limit"], stored["recommended_limit"])
+
+    def test_rate_limited_at_60_per_minute(self):
+        from unittest import mock
+        self.client.force_authenticate(self.owner)
+        # Skip the model for this check; only the throttle is under test.
+        fake = {k: 0 for k in ("credit_score", "probability_of_default", "recommended_limit", "monthly_repayment_estimate")}
+        fake.update(risk_category="Low Risk", shap_values=[], out_of_range=[])
+        with mock.patch("scoring.views.evaluate_credit_request", return_value=fake):
+            codes = [self.client.post(self.url, LOW_RISK, format="json").status_code for _ in range(61)]
+        self.assertEqual(codes[:60], [200] * 60)
+        self.assertEqual(codes[60], 429)

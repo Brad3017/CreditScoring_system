@@ -174,6 +174,32 @@ export async function fetchAssessmentDetail(pk) {
   return res.json();
 }
 
+// The stored answers behind one of the signed-in owner's own assessments.
+export async function fetchAssessmentInputs(pk) {
+  const res = await fetch(`${BASE}/scoring/assessments/${pk}/inputs/`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) throw new Error(await readError(res, "Your original answers could not be loaded."));
+  return res.json();
+}
+
+// What-if scoring. Saves nothing on the server. Pass an AbortSignal to cancel a stale request.
+export async function simulateAssessment(payload, signal) {
+  const res = await fetch(`${BASE}/scoring/simulate/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 429) throw new Error("Too many what-if requests in a short time. Wait a moment and try again.");
+    const fieldMessages = Object.values(body || {}).flat().filter((m) => typeof m === "string");
+    throw new Error(body.detail || body.error || fieldMessages.join(" ") || `Simulation failed (HTTP ${res.status}).`);
+  }
+  return body;
+}
+
 // decision: "approved" | "declined" | "referred"
 export async function reviewAssessment(pk, decision, note) {
   const res = await fetch(`${BASE}/scoring/assessments/${pk}/review/`, {

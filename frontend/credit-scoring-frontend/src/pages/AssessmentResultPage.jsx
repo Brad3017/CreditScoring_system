@@ -5,6 +5,9 @@ import RiskScale from "../components/RiskScale";
 import StatusPill from "../components/StatusPill";
 import ShapChart from "../components/ShapChart";
 import AffordabilityPanel from "../components/AffordabilityPanel";
+import OutOfRangeNotice from "../components/OutOfRangeNotice";
+import ImprovementTips from "../components/ImprovementTips";
+import WhatIfPanel from "../components/WhatIfPanel";
 import { getCurrentUser } from "../lib/api";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -54,16 +57,7 @@ export default function AssessmentResultPage() {
         <section className="panel" aria-labelledby="score-heading">
           <div className="panel-head"><h2 id="score-heading">Credit score</h2></div>
           <RiskScale score={assessment.credit_score} riskCategory={assessment.risk_category} isLegacy={assessment.is_legacy} modelVersion={assessment.model_version} />
-          {outOfRange.length > 0 && (
-            <div role="note" style={{ marginTop: "var(--space-5)", padding: "var(--space-4)", border: "1px solid var(--line-strong)", borderRadius: "var(--radius)", background: "var(--surface)" }}>
-              <p style={{ margin: 0, fontWeight: 600 }}>
-                Some answers are outside the range the model was trained on, so treat this score with extra caution.
-              </p>
-              <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "1.2em", color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
-                {outOfRange.map((n) => <li key={n}>{n}</li>)}
-              </ul>
-            </div>
-          )}
+          <OutOfRangeNotice notes={outOfRange} />
         </section>
 
         <section className="panel" aria-labelledby="afford-heading">
@@ -113,6 +107,29 @@ export default function AssessmentResultPage() {
         <div className="panel-head"><h2 id="factors-heading">What shaped this result</h2></div>
         <ShapChart values={assessment.shap_values} legacyExplanation={assessment.explanation || []} />
       </section>
+
+      {assessment.is_legacy || !assessment.shap_values?.length ? (
+        <p className="no-print" style={{ color: "var(--ink-2)", margin: 0 }}>
+          The what-if tool is available for assessments made with the current model.
+        </p>
+      ) : (
+        <>
+          <section className="panel" aria-labelledby="improve-heading">
+            <div className="panel-head"><h2 id="improve-heading">What would improve this score</h2></div>
+            <ImprovementTips values={assessment.shap_values} />
+          </section>
+
+          <div className="no-print" style={{ display: "grid", gap: "var(--space-3)" }}>
+            <section className="panel" aria-labelledby="whatif-heading">
+              <div className="panel-head"><h2 id="whatif-heading">Try a what-if</h2></div>
+              <WhatIfPanel assessment={assessment} />
+            </section>
+            <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: 0 }}>
+              This is a simulation. Nothing is saved, and it does not change your assessment or its review.
+            </p>
+          </div>
+        </>
+      )}
 
       <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: 0 }}>
         This assessment supports credit evaluation. It does not approve or issue a loan.
