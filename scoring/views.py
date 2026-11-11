@@ -14,7 +14,9 @@ from .serializers import (
     KraPinSerializer,
     MODEL_INPUT_FIELDS,
 )
-from .services import evaluate_credit_request, MODEL_VERSION, FEATURES
+from .services import (
+    evaluate_credit_request, label_matches_score, limit_explanation, MODEL_VERSION, FEATURES, LIMIT_INPUTS,
+)
 
 
 class IsAnalystOrAdmin(IsAuthenticated):
@@ -75,6 +77,17 @@ def _reviewer_name(a):
     return a.reviewed_by.full_name or a.reviewed_by.email
 
 
+def _limit_explanation(a, r):
+    """How the current limit policy set this record's limit. None for records scored by an
+    earlier model: their limit came from the rule in use at the time, which this does not describe."""
+    if a.model_version != MODEL_VERSION:
+        return None
+    try:
+        return limit_explanation(a.risk_category, r.collateral_level, r.tenure_months)
+    except (ValueError, RuntimeError):
+        return None
+
+
 def _payload(a, detailed=False):
     """One consistent JSON shape for an assessment, used by every endpoint."""
     r = a.request
@@ -89,6 +102,7 @@ def _payload(a, detailed=False):
         "probability_of_default": float(a.probability_of_default),
         "risk_category": a.risk_category,
         "recommended_limit": float(a.recommended_limit),
+        "limit_explanation": _limit_explanation(a, r),
         "explanation": a.shap_explanation,
         "shap_values": a.shap_values or [],
         "requested_amount": float(r.loan_amount),
@@ -96,8 +110,10 @@ def _payload(a, detailed=False):
         "monthly_repayment_estimate": float(a.monthly_repayment_estimate) or None,
         "loan_purpose": r.loan_purpose,
         "model_version": a.model_version,
-        # Scored by an earlier model whose risk bands differ from the current score scale.
-        "is_legacy": a.model_version != MODEL_VERSION,
+        # Only when the stored label disagrees with the band of its score (v1 used other cut-offs).
+        # Earlier models with the same bands (v2) are shown normally, tagged via is_current_model.
+        "is_legacy": not label_matches_score(a.risk_category, a.credit_score),
+        "is_current_model": a.model_version == MODEL_VERSION,
         "created_at": a.created_at.strftime("%b %d, %Y"),
         "created_at_iso": a.created_at.isoformat(),
         "review_status": a.review_status,
@@ -286,7 +302,8 @@ class SimulateRateThrottle(UserRateThrottle):
 # Fields returned by a simulation. Nothing else from the scoring result is exposed.
 SIMULATION_FIELDS = (
     "credit_score", "risk_category", "probability_of_default", "shap_values",
-    "out_of_range", "recommended_limit", "monthly_repayment_estimate",
+    "out_of_range", "recommended_limit", "monthly_repayment_estimate", "limit_explanation",
+    "model_version",
 )
 
 
@@ -376,7 +393,8 @@ class LessonViewedView(APIView):
 
     def post(self, request):
         key = str(request.data.get("feature_key") or "").strip()
-        if key not in FEATURES:
+        # Lessons cover model features and the answers the limit policy uses (collateral).
+        if key not in FEATURES and key not in LIMIT_INPUTS:
             return Response({"feature_key": ["Unknown lesson."]}, status=status.HTTP_400_BAD_REQUEST)
         today = timezone.localdate()
         try:

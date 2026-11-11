@@ -126,13 +126,15 @@ class AdminFairnessView(APIView):
         ("county", "County"),
         ("legal_status", "Legal structure"),
         ("location_type", "Location type"),
+        # Not a model input since v3: low-collateral applicants should score no worse.
+        ("collateral_level", "Collateral"),
     ]
 
     def get(self, request):
         qs = _queryset(request)
         rows = list(qs.values(
             "request__sector", "request__county", "request__legal_status", "request__location_type",
-            "credit_score", "risk_category", "review_status",
+            "request__collateral_level", "credit_score", "risk_category", "review_status",
         ))
         total = len(rows)
         overall_high = _pct(sum(_is_high(r["risk_category"]) for r in rows), total)
@@ -192,6 +194,11 @@ class AdminModelView(APIView):
             "target": meta.get("target"),
             "metadata_threshold": meta.get("threshold"),
             "features": meta.get("features", []),
+            # Columns the model does not use, with the reason recorded in the metadata.
+            "excluded_inputs": [
+                {"key": k, "label": meta.get("feature_labels", {}).get(k, k), "reason": reason}
+                for k, reason in (meta.get("excluded_columns") or {}).items()
+            ],
             "risk_bands": services.risk_band_rules(),
             "score_formula": "credit score = " + meta.get("score", {}).get("formula", "not recorded") + ", where pd is the probability of default",
             "versions_in_use": [{"version": v["model_version"], "count": v["n"]} for v in versions],

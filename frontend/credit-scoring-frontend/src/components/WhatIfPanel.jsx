@@ -1,5 +1,7 @@
 // "Try a what-if": change a few stored answers and see the model's new score. Nothing is saved;
 // every number shown comes from POST /api/scoring/simulate/ or from the stored assessment.
+// Collateral stays a control but is not a model input (v3): it changes only the recommended limit.
+// Repayment confidence is no longer a control. Shown only for assessments made with the current model.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssessmentInputs, simulateAssessment } from "../lib/api";
 import { riskKeyFromCategory } from "./RiskScale";
@@ -94,14 +96,22 @@ export default function WhatIfPanel({ assessment }) {
   if (!form) return <p aria-busy="true" style={{ margin: 0, color: "var(--ink-2)" }}>Loading your original answers…</p>;
 
   // Every change marks the result as pending; the effect above sends it after the pause.
+  // Any request still in flight is for older answers: cancel it now, so its reply can never be
+  // shown as the result for the new answers.
   const update = (next) => {
+    controller.current?.abort();
     setForm(next);
     setError("");
     setCalculating(next.loan_amount !== "" && Number(next.loan_amount) > 0);
   };
   const set = (name, value) => update({ ...form, [name]: value });
   const inputError = loanValid ? "" : "Enter a loan amount greater than 0.";
-  const changed = JSON.stringify(form) !== JSON.stringify(pickEditable(stored));
+  const original = pickEditable(stored);
+  const changed = JSON.stringify(form) !== JSON.stringify(original);
+  const changedKeys = Object.keys(form).filter((k) => String(form[k]) !== String(original[k]));
+  // Collateral is not in the score (model v3): it moves only the recommended limit.
+  const onlyCollateral = changedKeys.length === 1 && changedKeys[0] === "collateral_level";
+  const fresh = result && !calculating && !error && !inputError;
   const sliderLoan = loanValid ? Math.min(LOAN_MAX, Math.max(LOAN_MIN, loanNumber)) : LOAN_MIN;
 
   return (
@@ -148,9 +158,11 @@ export default function WhatIfPanel({ assessment }) {
 
         <div>
           <label htmlFor="wi-coll" style={labelStyle}>Collateral</label>
-          <select id="wi-coll" value={form.collateral_level} onChange={(e) => set("collateral_level", e.target.value)} style={controlStyle}>
+          <select id="wi-coll" value={form.collateral_level} onChange={(e) => set("collateral_level", e.target.value)} style={controlStyle}
+            aria-describedby="wi-coll-hint">
             {["Low", "Moderate", "High"].map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
+          <p id="wi-coll-hint" style={{ ...muted, margin: "var(--space-1) 0 0" }}>Changes the recommended limit only, not the score.</p>
         </div>
 
         <div>
@@ -182,11 +194,27 @@ export default function WhatIfPanel({ assessment }) {
         />
       </div>
 
+      {fresh && onlyCollateral && (
+        <p role="status" style={{ margin: 0, fontWeight: 600 }}>
+          {result.credit_score === assessment.credit_score
+            ? <>Changing collateral kept the score at <span className="num">{result.credit_score}</span>. </>
+            : <>The score is <span className="num">{result.credit_score}</span>. </>}
+          {result.recommended_limit === assessment.recommended_limit
+            ? <>The recommended limit stays at <span className="num">{kes(result.recommended_limit)}</span>.</>
+            : <>The recommended limit moves from <span className="num">{kes(assessment.recommended_limit)}</span> to <span className="num">{kes(result.recommended_limit)}</span>.</>}
+        </p>
+      )}
+
       {result && (
         <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: "var(--space-5)", margin: 0, opacity: calculating ? 0.6 : 1 }}>
           <div>
+            <dt style={muted}>Original recommended limit</dt>
+            <dd className="num" style={{ margin: "var(--space-1) 0 0", fontWeight: 600, fontSize: "var(--text-lg)" }}>{kes(assessment.recommended_limit)}</dd>
+          </div>
+          <div>
             <dt style={muted}>What-if recommended limit</dt>
             <dd className="num" style={{ margin: "var(--space-1) 0 0", fontWeight: 600, fontSize: "var(--text-lg)" }}>{kes(result.recommended_limit)}</dd>
+            {result.limit_explanation && <dd style={{ ...muted, margin: "2px 0 0" }}>{result.limit_explanation}</dd>}
           </div>
           <div>
             <dt style={muted}>What-if monthly repayment</dt>

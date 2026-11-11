@@ -52,12 +52,14 @@ class ApplicantSerializer(serializers.ModelSerializer):
                   "phone", "county", "role"]
 
 
-# Every model input must be sent explicitly; model-field defaults must not stand in for answers.
+# Every answer scoring needs must be sent explicitly; model-field defaults must not stand in for
+# answers. collateral_level is not a model input since v3 but is required for the loan limit.
+# repayment_confidence is no longer asked (v3); it is accepted if sent, and stored as NULL if not.
 MODEL_INPUT_FIELDS = [
     "sector", "legal_status", "location_type", "loan_purpose", "business_age_years",
     "employees_count", "monthly_revenue_kes", "monthly_profit_kes", "loan_amount",
     "tenure_months", "existing_loans", "prior_loan_count", "late_payment_history",
-    "collateral_level", "cashflow_stability", "repayment_confidence", "owner_education",
+    "collateral_level", "cashflow_stability", "owner_education",
     "days_payable_outstanding",
 ]
 
@@ -107,6 +109,7 @@ class CreditRequestSerializer(serializers.ModelSerializer):
 
         allowed = dict(services.NOMINAL_CATEGORIES)
         allowed.update({k: list(v) for k, v in services.ORDINAL_MAPPINGS.items() if k != "existing_loans"})
+        allowed["collateral_level"] = services.COLLATERAL_LEVELS
         for field, values in allowed.items():
             if field in attrs and attrs[field] not in values:
                 errors[field] = f"'{attrs[field]}' is not allowed. Use one of: {', '.join(values)}."

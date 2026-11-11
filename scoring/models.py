@@ -75,8 +75,10 @@ class CreditRequest(models.Model):
     existing_loans = models.BooleanField(default=False)
     prior_loan_count = models.IntegerField(default=0)
     late_payment_history = models.CharField(max_length=20, default="Never")
+    # Not a model input since v3; still required, because the recommended loan limit uses it.
     collateral_level = models.CharField(max_length=20, default="Moderate")
-    repayment_confidence = models.IntegerField(default=4)  # 1 to 5 scale
+    # 1 to 5 scale. Asked only up to model v2; kept for history. NULL = not asked.
+    repayment_confidence = models.IntegerField(null=True, blank=True)
     owner_education = models.CharField(max_length=50, default="Secondary")
 
     # Business demographics snapshot (captured at time of application)

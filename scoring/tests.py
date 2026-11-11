@@ -1,5 +1,5 @@
 """
-Tests for the xgb_msme_v2 scoring service, the request serializer and the submit endpoint.
+Tests for the xgb_msme_v3 scoring service, the request serializer and the submit endpoint.
 Run with: python manage.py test scoring
 """
 import json
@@ -37,9 +37,32 @@ LOW_RISK = {
     "late_payment_history": "Rarely",
     "collateral_level": "High",
     "cashflow_stability": 5,
-    "repayment_confidence": 5,
     "owner_education": "Bachelor's",
     "days_payable_outstanding": 20,
+}
+
+# A middling applicant: Moderate Risk under v3 (score 600), inside the training ranges.
+# affordable = 0.40 x 60,000 x 12 = 288,000; the 600,000 request is above it.
+MODERATE_RISK = {
+    "business_name": "Test Kiosk",
+    "county": "Nairobi",
+    "sector": "Retail",
+    "legal_status": "Sole",
+    "location_type": "Urban",
+    "loan_purpose": "Working capital",
+    "business_age_years": 5,
+    "employees_count": 6,
+    "monthly_revenue_kes": 300_000,
+    "monthly_profit_kes": 60_000,
+    "loan_amount": 600_000,
+    "tenure_months": 12,
+    "existing_loans": True,
+    "prior_loan_count": 1,
+    "late_payment_history": "Rarely",
+    "collateral_level": "Moderate",
+    "cashflow_stability": 3,
+    "owner_education": "Secondary",
+    "days_payable_outstanding": 45,
 }
 
 # A weak applicant, every input inside the training ranges.
@@ -60,7 +83,6 @@ HIGH_RISK = {
     "late_payment_history": "Sometimes",
     "collateral_level": "Low",
     "cashflow_stability": 1,
-    "repayment_confidence": 1,
     "owner_education": "Primary",
     "days_payable_outstanding": 85,
 }
@@ -72,7 +94,7 @@ class PrepareFeaturesTests(SimpleTestCase):
         meta = json.loads((settings.ML_ARTIFACTS_DIR / "model_metadata.json").read_text(encoding="utf-8"))
 
         self.assertEqual(list(X.columns), meta["features"])
-        self.assertEqual(X.shape, (1, 19))
+        self.assertEqual(X.shape, (1, 17))
         self.assertTrue(all(dt == np.float64 for dt in X.dtypes))
         self.assertNotIn("county", X.columns)
 
@@ -83,7 +105,6 @@ class PrepareFeaturesTests(SimpleTestCase):
             "location_type": 1.0,        # Rural, Urban
             "loan_purpose": 4.0,         # ..., Renovation, Working capital
             "late_payment_history": 1.0, # Never=0, Rarely=1
-            "collateral_level": 2.0,     # High=2
             "owner_education": 3.0,      # Bachelor's=3
             "existing_loans": 1.0,       # Yes=1
             "profit_margin": 0.3,        # 300,000 / 1,000,000
@@ -106,7 +127,7 @@ class ScoreTests(SimpleTestCase):
         r = services.score(LOW_RISK)
         self.assertTrue(300 <= r["credit_score"] <= 850)
         self.assertIn(r["risk_category"], ("Low Risk", "Moderate Risk", "High Risk"))
-        self.assertEqual(len(r["shap_values"]), 19)
+        self.assertEqual(len(r["shap_values"]), 17)
         self.assertEqual({s["feature"] for s in r["shap_values"]}, set(services.FEATURES))
         for item in r["shap_values"]:
             self.assertEqual(set(item), {"feature", "label", "value", "direction"})
@@ -114,7 +135,7 @@ class ScoreTests(SimpleTestCase):
         magnitudes = [abs(s["value"]) for s in r["shap_values"]]
         self.assertEqual(magnitudes, sorted(magnitudes, reverse=True))
         self.assertEqual(len(r["shap_explanation"]), 3)
-        self.assertEqual(r["model_version"], "xgb_msme_v2")
+        self.assertEqual(r["model_version"], "xgb_msme_v3")
 
     def test_score_matches_band_and_formula(self):
         for applicant in (LOW_RISK, HIGH_RISK):
@@ -133,8 +154,8 @@ class ScoreTests(SimpleTestCase):
             "business_age_years": 12, "employees_count": 20, "monthly_revenue_kes": 1_000_000,
             "profit_margin": 0.3, "loan_amount_kes": 1_500_000, "loan_to_revenue": 1.5,
             "tenure_months": 12, "existing_loans": 1, "prior_loan_count": 2,
-            "late_payment_history": 1, "collateral_level": 2, "cashflow_stability": 5,
-            "repayment_confidence": 5, "owner_education": 3, "days_payable_outstanding": 20,
+            "late_payment_history": 1, "cashflow_stability": 5,
+            "owner_education": 3, "days_payable_outstanding": 20,
         }], columns=meta["features"], dtype=float)
 
         fresh = xgb.XGBClassifier()
@@ -172,24 +193,69 @@ class BadInputTests(SimpleTestCase):
 
 
 class AffordabilityTests(SimpleTestCase):
+    """metadata["limit_policy"]: affordable x share[band][collateral], capped at the request, floored to 1,000."""
+
+    def policy(self):
+        return services.LIMIT_POLICY
+
+    def affordable(self, profit, tenure):
+        return self.policy()["max_repayment_share_of_profit"] * profit * tenure
+
     def test_high_risk_gets_no_limit(self):
-        self.assertEqual(services.affordability(500_000, 200_000, 12, "High Risk")["recommended_limit"], 0)
+        for collateral in services.COLLATERAL_LEVELS:
+            self.assertEqual(services.affordability(500_000, 200_000, 12, "High Risk", collateral)["recommended_limit"], 0)
         self.assertEqual(services.score(HIGH_RISK)["recommended_limit"], 0)
 
-    def test_limit_never_exceeds_request(self):
+    def test_low_risk_is_min_of_request_and_affordable(self):
+        for collateral in services.COLLATERAL_LEVELS:
+            # affordable 240,000 below the request
+            r = services.affordability(1_000_000, 50_000, 12, "Low Risk", collateral)
+            self.assertEqual(r["affordable_limit"], self.affordable(50_000, 12))
+            self.assertEqual(r["recommended_limit"], 240_000)
+            # request below affordable
+            self.assertEqual(services.affordability(100_000, 50_000, 12, "Low Risk", collateral)["recommended_limit"], 100_000)
+
+    def test_moderate_risk_uses_collateral_share(self):
+        shares = self.policy()["share_of_affordable_by_band"]["Moderate Risk"]
+        for collateral, share in shares.items():
+            r = services.affordability(1_000_000, 50_000, 12, "Moderate Risk", collateral)
+            self.assertEqual(r["recommended_limit"], (self.affordable(50_000, 12) * share // 1000) * 1000, collateral)
+
+    def test_never_exceeds_affordable_or_requested(self):
         for risk in ("Low Risk", "Moderate Risk", "High Risk"):
-            r = services.affordability(300_000, 5_000_000, 36, risk)
-            self.assertLessEqual(r["recommended_limit"], r["requested_amount"])
+            for collateral in services.COLLATERAL_LEVELS:
+                for loan, profit, tenure in ((300_000, 5_000_000, 36), (1_000_000, 33_333, 7), (55_555, 12_345, 9)):
+                    r = services.affordability(loan, profit, tenure, risk, collateral)
+                    self.assertLessEqual(r["recommended_limit"], r["requested_amount"])
+                    self.assertLessEqual(r["recommended_limit"], r["affordable_limit"])
         self.assertLessEqual(services.score(LOW_RISK)["recommended_limit"], LOW_RISK["loan_amount"])
 
-    def test_rule_and_rounding(self):
-        # affordable = 0.4 * 50,000 * 12 = 240,000
-        low = services.affordability(1_000_000, 50_000, 12, "Low Risk")
-        self.assertEqual(low["affordable_limit"], 240_000)
-        self.assertEqual(low["recommended_limit"], 240_000)
-        self.assertEqual(low["monthly_repayment_estimate"], round(1_000_000 / 12, 2))
-        # moderate = half of 0.4 * 33,333 * 7 = 46,666.2 -> rounded down to 46,000
-        self.assertEqual(services.affordability(1_000_000, 33_333, 7, "Moderate Risk")["recommended_limit"], 46_000)
+    def test_rounded_down_to_the_nearest_1000(self):
+        # Moderate, low collateral: 0.5 x (0.4 x 33,333 x 7 = 93,332.4) = 46,666.2 -> 46,000
+        r = services.affordability(1_000_000, 33_333, 7, "Moderate Risk", "Low")
+        self.assertEqual(r["recommended_limit"], 46_000)
+        self.assertEqual(r["recommended_limit"] % self.policy()["round_down_to"], 0)
+        # Low risk, request 123,456 below affordable -> 123,000 (down, never up)
+        self.assertEqual(services.affordability(123_456, 100_000, 12, "Low Risk", "Low")["recommended_limit"], 123_000)
+
+    def test_limit_explanation(self):
+        self.assertEqual(
+            services.affordability(600_000, 60_000, 12, "Moderate Risk", "High")["limit_explanation"],
+            "Moderate risk with high collateral: up to 100% of what your profit can repay over 12 months.",
+        )
+        self.assertEqual(
+            services.affordability(600_000, 60_000, 12, "Moderate Risk", "Low")["limit_explanation"],
+            "Moderate risk with low collateral: up to 50% of what your profit can repay over 12 months.",
+        )
+        # Collateral does not change the share for Low or High Risk, so it is not mentioned.
+        self.assertEqual(
+            services.affordability(600_000, 60_000, 6, "Low Risk", "Low")["limit_explanation"],
+            "Low risk: up to 100% of what your profit can repay over 6 months.",
+        )
+        self.assertEqual(
+            services.affordability(600_000, 60_000, 12, "High Risk", "High")["limit_explanation"],
+            "High risk: no loan limit is recommended.",
+        )
 
 
 class SerializerTests(SimpleTestCase):
@@ -232,21 +298,21 @@ class SubmitEndpointTests(TestCase):
         self.client = APIClient(HTTP_HOST="localhost")
         self.owner = User.objects.create_user(username="owner", email="owner@test.ke", password="x", role="owner")
 
-    def test_owner_gets_v2_assessment(self):
+    def test_owner_gets_v3_assessment(self):
         self.client.force_authenticate(self.owner)
         res = self.client.post(self.url, LOW_RISK, format="json")
         self.assertEqual(res.status_code, 201, res.content)
         body = res.json()
-        self.assertEqual(len(body["shap_values"]), 19)
-        self.assertEqual(body["model_version"], "xgb_msme_v2")
+        self.assertEqual(len(body["shap_values"]), 17)
+        self.assertEqual(body["model_version"], "xgb_msme_v3")
         self.assertEqual(body["loan_purpose"], "Working capital")
         self.assertEqual(body["requested_amount"], 1_500_000)
         self.assertEqual(body["monthly_repayment_estimate"], 125_000)
         self.assertEqual(body["out_of_range"], [])
 
         stored = CreditAssessment.objects.get()
-        self.assertEqual(stored.model_version, "xgb_msme_v2")
-        self.assertEqual(len(stored.shap_values), 19)
+        self.assertEqual(stored.model_version, "xgb_msme_v3")
+        self.assertEqual(len(stored.shap_values), 17)
 
     def test_bad_input_returns_400_and_saves_nothing(self):
         self.client.force_authenticate(self.owner)
@@ -321,10 +387,11 @@ class SimulateEndpointTests(TestCase):
         body = res.json()
         self.assertEqual(set(body), {
             "credit_score", "risk_category", "probability_of_default", "shap_values",
-            "out_of_range", "recommended_limit", "monthly_repayment_estimate",
+            "out_of_range", "recommended_limit", "monthly_repayment_estimate", "limit_explanation",
+            "model_version",
         })
         self.assertTrue(300 <= body["credit_score"] <= 850)
-        self.assertEqual(len(body["shap_values"]), 19)
+        self.assertEqual(len(body["shap_values"]), 17)
         self.assertEqual(self.counts(), before)
 
     def test_staff_may_simulate(self):
@@ -356,7 +423,7 @@ class SimulateEndpointTests(TestCase):
         self.assertEqual(self.client.get(f"/api/scoring/assessments/{theirs['pk']}/inputs/").status_code, 200)
 
     def test_stored_inputs_reproduce_stored_score(self):
-        for payload in (LOW_RISK, HIGH_RISK):
+        for payload in (LOW_RISK, MODERATE_RISK, HIGH_RISK):
             stored = self.submit(self.owner, payload)
             inputs = self.client.get(f"/api/scoring/assessments/{stored['pk']}/inputs/")
             self.assertEqual(inputs.status_code, 200)
@@ -371,7 +438,7 @@ class SimulateEndpointTests(TestCase):
         self.client.force_authenticate(self.owner)
         # Skip the model for this check; only the throttle is under test.
         fake = {k: 0 for k in ("credit_score", "probability_of_default", "recommended_limit", "monthly_repayment_estimate")}
-        fake.update(risk_category="Low Risk", shap_values=[], out_of_range=[])
+        fake.update(risk_category="Low Risk", shap_values=[], out_of_range=[], limit_explanation="", model_version="x")
         with mock.patch("scoring.views.evaluate_credit_request", return_value=fake):
             codes = [self.client.post(self.url, LOW_RISK, format="json").status_code for _ in range(61)]
         self.assertEqual(codes[:60], [200] * 60)
@@ -550,10 +617,10 @@ class LessonContentTests(SimpleTestCase):
         with open(CONTENT_DIR / name, encoding="utf-8") as f:
             return json.load(f)
 
-    def test_every_key_is_a_real_model_feature(self):
+    def test_every_key_is_a_model_feature_or_limit_input(self):
         features = set(json.load(open(settings.ML_ARTIFACTS_DIR / "model_metadata.json", encoding="utf-8"))["features"])
-        unknown = set(self.load("lessons.en.json")) - features
-        self.assertEqual(unknown, set(), f"lesson keys that are not model features: {unknown}")
+        unknown = set(self.load("lessons.en.json")) - features - set(services.LIMIT_INPUTS)
+        self.assertEqual(unknown, set(), f"lesson keys that are neither model features nor limit inputs: {unknown}")
 
     def test_every_lesson_has_five_fields_and_three_steps(self):
         for key, lesson in self.load("lessons.en.json").items():
@@ -629,3 +696,140 @@ class LessonViewTests(TestCase):
             {"feature_key": "late_payment_history", "views": 2},
             {"feature_key": "cashflow_stability", "views": 1},
         ])
+
+
+# ---------------------------------------------------------------------------
+# Model v3: no repayment confidence; collateral sets the loan limit, never the score
+# ---------------------------------------------------------------------------
+class ModelV3Tests(TestCase):
+    REMOVED = ("repayment_confidence", "collateral_level")
+
+    def setUp(self):
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="v3", email="v3@test.ke", password="x", role="owner")
+        self.meta = json.loads((settings.ML_ARTIFACTS_DIR / "model_metadata.json").read_text(encoding="utf-8"))
+
+    def test_metadata_is_v3(self):
+        self.assertEqual(self.meta["model_version"], "xgb_msme_v3")
+        self.assertEqual(len(self.meta["features"]), 17)
+        self.assertIn("limit_policy", self.meta)
+
+    def test_prepare_features_has_the_17_metadata_features_in_order(self):
+        for applicant in (LOW_RISK, MODERATE_RISK, HIGH_RISK):
+            X = services.prepare_features(applicant)
+            self.assertEqual(list(X.columns), self.meta["features"])
+            self.assertEqual(X.shape, (1, 17))
+            for column in self.REMOVED:
+                self.assertNotIn(column, X.columns)
+
+    def test_removed_inputs_never_reach_the_model(self):
+        # Even when sent, repayment confidence changes nothing.
+        a = services.score({**MODERATE_RISK, "repayment_confidence": 1})
+        b = services.score({**MODERATE_RISK, "repayment_confidence": 5})
+        self.assertEqual(a["probability_of_default"], b["probability_of_default"])
+        self.assertNotIn("repayment_confidence", {v["feature"] for v in a["shap_values"]})
+        self.assertNotIn("collateral_level", {v["feature"] for v in a["shap_values"]})
+
+    def test_collateral_changes_the_limit_but_not_the_score(self):
+        results = {c: services.score({**MODERATE_RISK, "collateral_level": c}) for c in services.COLLATERAL_LEVELS}
+        first = results["Low"]
+        self.assertEqual(first["risk_category"], "Moderate Risk")
+        for r in results.values():
+            self.assertEqual(r["probability_of_default"], first["probability_of_default"])
+            self.assertEqual(r["credit_score"], first["credit_score"])
+            self.assertEqual(r["risk_category"], first["risk_category"])
+        # affordable 288,000: Low 0.5 -> 144,000; Moderate 0.75 -> 216,000; High 1.0 -> 288,000
+        self.assertEqual(results["Low"]["recommended_limit"], 144_000)
+        self.assertEqual(results["Moderate"]["recommended_limit"], 216_000)
+        self.assertEqual(results["High"]["recommended_limit"], 288_000)
+
+    def test_hand_built_row_probability_matches_predict_proba(self):
+        # MODERATE_RISK encoded by hand from the metadata lists and mappings.
+        row = pd.DataFrame([{
+            "sector": 2, "legal_status": 2, "location_type": 1, "loan_purpose": 4,
+            "business_age_years": 5, "employees_count": 6, "monthly_revenue_kes": 300_000,
+            "profit_margin": 0.2, "loan_amount_kes": 600_000, "loan_to_revenue": 2.0,
+            "tenure_months": 12, "existing_loans": 1, "prior_loan_count": 1,
+            "late_payment_history": 1, "cashflow_stability": 3, "owner_education": 1,
+            "days_payable_outstanding": 45,
+        }], columns=self.meta["features"], dtype=float)
+        fresh = xgb.XGBClassifier()
+        fresh.load_model(str(settings.ML_ARTIFACTS_DIR / "msme_xgboost_credit_model.json"))
+        direct = float(fresh.predict_proba(row)[0, 1])
+        via_service = float(services.xgb_model.predict_proba(services.prepare_features(MODERATE_RISK))[0, 1])
+        self.assertAlmostEqual(via_service, direct, places=6)
+
+    def test_request_without_repayment_confidence_is_accepted_and_stored_as_null(self):
+        self.assertNotIn("repayment_confidence", MODERATE_RISK)
+        self.assertTrue(CreditRequestSerializer(data=MODERATE_RISK).is_valid())
+        self.client.force_authenticate(self.owner)
+        res = self.client.post("/api/scoring/assess/", MODERATE_RISK, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertIsNone(CreditRequest.objects.get().repayment_confidence)
+        self.assertEqual(
+            res.json()["limit_explanation"],
+            "Moderate risk with moderate collateral: up to 75% of what your profit can repay over 12 months.",
+        )
+
+    def test_request_without_collateral_is_rejected(self):
+        data = {k: v for k, v in MODERATE_RISK.items() if k != "collateral_level"}
+        s = CreditRequestSerializer(data=data)
+        self.assertFalse(s.is_valid())
+        self.assertIn("collateral_level", s.errors)
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.post("/api/scoring/assess/", data, format="json").status_code, 400)
+        self.assertEqual(CreditRequest.objects.count(), 0)
+        with self.assertRaisesMessage(ValueError, "Collateral is missing"):
+            services.prepare_features(data)
+
+    def test_collateral_must_be_low_moderate_or_high(self):
+        s = CreditRequestSerializer(data={**MODERATE_RISK, "collateral_level": "Very high"})
+        self.assertFalse(s.is_valid())
+        self.assertIn("collateral_level", s.errors)
+
+    def stored(self, version, score, label, collateral="High"):
+        req = CreditRequest.objects.create(
+            user=self.owner, business_name=f"{version} {score}", monthly_profit_kes=60_000,
+            collateral_level=collateral, tenure_months=12,
+        )
+        return CreditAssessment.objects.create(
+            request=req, probability_of_default=0.5, credit_score=score, risk_category=label,
+            model_version=version, shap_values=[{"feature": "collateral_level", "label": "Collateral", "value": 0.1, "direction": "raises_risk"}],
+        )
+
+    def test_legacy_only_when_label_disagrees_with_score_band(self):
+        v1 = self.stored("xgb_msme_v1", 553, "High Risk")     # 553 is in the Moderate band
+        v2 = self.stored("xgb_msme_v2", 600, "Moderate Risk")
+        edge = self.stored("xgb_msme_v3", 700, "Moderate Risk")  # pd just above 0.272727 rounds to 700
+        self.client.force_authenticate(self.owner)
+        body = {a["pk"]: a for a in self.client.get("/api/scoring/assessments/").json()}
+        self.assertTrue(body[v1.pk]["is_legacy"])
+        self.assertFalse(body[v1.pk]["is_current_model"])
+        self.assertFalse(body[v2.pk]["is_legacy"])
+        self.assertFalse(body[v2.pk]["is_current_model"])
+        self.assertFalse(body[edge.pk]["is_legacy"])
+        self.assertTrue(body[edge.pk]["is_current_model"])
+        # Earlier-model limits came from the old rule; the v3 sentence would misdescribe them.
+        self.assertIsNone(body[v2.pk]["limit_explanation"])
+        # Stored SHAP values are returned as stored, removed features included.
+        self.assertEqual(body[v2.pk]["shap_values"][0]["feature"], "collateral_level")
+
+    def test_collateral_lesson_can_still_be_recorded(self):
+        self.client.force_authenticate(self.owner)
+        res = self.client.post("/api/learn/viewed/", {"feature_key": "collateral_level"}, format="json")
+        self.assertEqual(res.status_code, 201)
+        res = self.client.post("/api/learn/viewed/", {"feature_key": "repayment_confidence"}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_admin_model_and_fairness(self):
+        admin = User.objects.create_user(username="v3a", email="v3a@test.ke", password="x", role="admin")
+        self.stored("xgb_msme_v3", 600, "Moderate Risk", collateral="Low")
+        self.client.force_authenticate(admin)
+        model = self.client.get("/api/scoring/admin/model/").json()
+        self.assertIn("Without both (chosen)", model["report"]["feature_decisions"])
+        excluded = {e["key"]: e for e in model["excluded_inputs"]}
+        self.assertEqual(excluded["collateral_level"]["reason"], self.meta["excluded_columns"]["collateral_level"])
+        self.assertEqual(excluded["repayment_confidence"]["label"], "Repayment confidence")
+        fairness = self.client.get("/api/scoring/admin/fairness/").json()
+        collateral = next(d for d in fairness["dimensions"] if d["field"] == "collateral_level")
+        self.assertEqual(collateral["groups"][0]["name"], "Low")

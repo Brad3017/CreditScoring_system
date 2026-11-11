@@ -4,11 +4,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { th, td, muted } from "./analystUi";
-import { hasLesson } from "../lib/lessons";
+import { hasScoreLesson } from "../lib/lessons";
 
-// Small "Learn why" link to the lesson for a factor (owner report only).
+// Small "Learn why" link to the lesson for a factor (owner report only). Never for collateral:
+// it is not in the score since v3, even if an older stored assessment lists it.
 function LearnWhy({ feature, label }) {
-  if (!hasLesson(feature)) return null;
+  if (!hasScoreLesson(feature)) return null;
   return (
     <Link to={`/learn/${feature}`} aria-label={`Learn why ${label} matters`}
       style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>

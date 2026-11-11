@@ -1,10 +1,13 @@
 """
-Scoring service for the xgb_msme_v2 model.
+Scoring service for the model described in ml_artifacts/model_metadata.json (xgb_msme_v3).
 
 Everything model-specific (feature order, encodings, labels, score formula, risk bands,
-version) is read from ml_artifacts/model_metadata.json, which the training notebook
-exports next to the model. Nothing about the model is hard-coded here except the
-training ranges, which the metadata does not carry (see TRAINING_RANGES).
+loan limit policy, version) is read from the metadata, which the training notebook exports
+next to the model. Nothing about the model is hard-coded here except the training ranges,
+which the metadata does not carry (see TRAINING_RANGES).
+
+Collateral is NOT a model input since v3. It is still a required answer, because the
+recommended loan limit depends on it (metadata["limit_policy"]).
 """
 import json
 import logging
@@ -53,6 +56,11 @@ SCORE_MIN = _score_cfg.get("min", 300)
 SCORE_MAX = _score_cfg.get("max", 850)
 SCORE_SPAN = _score_cfg.get("span", 550)
 
+LIMIT_POLICY = METADATA.get("limit_policy") or {}
+COLLATERAL_LEVELS = list(LIMIT_POLICY.get("collateral_levels", []))
+# Answers the system uses outside the model: collateral sets the loan limit only.
+LIMIT_INPUTS = ("collateral_level",) if COLLATERAL_LEVELS else ()
+
 
 def _band_limits(bands):
     low_max = next((b["pd_max_inclusive"] for b in bands if "pd_max_inclusive" in b), None)
@@ -61,6 +69,38 @@ def _band_limits(bands):
 
 
 LOW_RISK_MAX_PD, HIGH_RISK_MIN_PD = _band_limits(METADATA.get("risk_bands", []))
+
+
+def _score_bands(bands):
+    """[(label, low, high)] from the metadata's "score_range" strings, e.g. "700-850"."""
+    out = []
+    for b in bands:
+        try:
+            low, high = (int(x) for x in str(b.get("score_range", "")).split("-"))
+        except ValueError:
+            continue
+        out.append((b["label"], low, high))
+    return out
+
+
+SCORE_BANDS = _score_bands(METADATA.get("risk_bands", []))
+
+
+def label_matches_score(risk_category, credit_score):
+    """True when a stored label belongs to the band of its score.
+
+    A score is round(850 - 550 * pd) while the label comes from pd itself, so right at a band
+    edge the rounding can move the score one point across (pd 0.2730 is Moderate Risk but scores
+    700). One point either side is therefore accepted. Without score bands nothing is flagged."""
+    if not SCORE_BANDS or credit_score is None:
+        return True
+    nearby = {
+        label
+        for s in (credit_score - 1, credit_score, credit_score + 1)
+        for label, low, high in SCORE_BANDS
+        if low <= s <= high
+    }
+    return risk_category in nearby
 
 
 def risk_band_rules():
@@ -114,6 +154,7 @@ _ALIASES = {
         ("secondary", "Secondary"), ("high school", "Secondary"),
         ("primary", "Primary"),
     ],
+    # Not a model input since v3, but still required: the loan limit policy uses it.
     "collateral_level": [("high", "High"), ("mod", "Moderate"), ("med", "Moderate"), ("low", "Low")],
     "late_payment_history": [
         ("never", "Never"), ("rare", "Rarely"), ("once", "Rarely"),
@@ -193,11 +234,16 @@ def _prepare(data):
             plain[field] = _yes_no(data, field)
         else:
             plain[field] = _category(data, field, list(mapping))
+    # For the loan limit only; never placed in the model row below.
+    if not COLLATERAL_LEVELS:
+        raise RuntimeError("Model metadata has no limit_policy.collateral_levels. Check ml_artifacts/.")
+    plain["collateral_level"] = _category(data, "collateral_level", COLLATERAL_LEVELS)
 
+    # repayment_confidence is not read at all: it left the model in v3.
     for field in (
         "business_age_years", "employees_count", "monthly_revenue_kes", "monthly_profit_kes",
         "loan_amount_kes", "tenure_months", "prior_loan_count", "cashflow_stability",
-        "repayment_confidence", "days_payable_outstanding",
+        "days_payable_outstanding",
     ):
         plain[field] = _number(data, field)
 
@@ -252,40 +298,68 @@ def _out_of_range(plain):
 
 
 # ---------------------------------------------------------------------------
-# BUSINESS RULE: affordability and recommended limit. Adjust the constants here.
-#   - Repayments may take at most 40% of monthly profit.
-#   - Low Risk: lend up to the affordable amount.
-#   - Moderate Risk: lend up to half of it.
-#   - High Risk: no recommended limit.
-#   - Never more than the applicant asked for; rounded down to the nearest KES 1,000.
-#   - The monthly repayment is a flat estimate (amount / months) with NO interest.
+# Loan limit: metadata["limit_policy"]. Every number here comes from the metadata.
+#   affordable  = max_repayment_share_of_profit x monthly profit x tenure months
+#   share       = share_of_affordable_by_band[risk category][collateral level]
+#   recommended = min(requested, affordable x share), rounded DOWN to round_down_to
+# The monthly repayment is a flat estimate (amount / months) with NO interest.
 # ---------------------------------------------------------------------------
-REPAYMENT_SHARE_OF_PROFIT = 0.40
-MODERATE_RISK_SHARE = 0.5
-LIMIT_ROUND_TO = 1000
+def _policy():
+    needed = ("max_repayment_share_of_profit", "share_of_affordable_by_band", "round_down_to")
+    if any(k not in LIMIT_POLICY for k in needed):
+        raise RuntimeError("Model metadata has no complete limit_policy. Check ml_artifacts/.")
+    return LIMIT_POLICY
 
 
-def affordability(loan_amount, monthly_profit_kes, tenure_months, risk_category):
+def _share(risk_category, collateral_level):
+    shares = _policy()["share_of_affordable_by_band"]
+    try:
+        return float(shares[risk_category][collateral_level])
+    except KeyError:
+        raise ValueError(f"No loan limit share for {risk_category} with {collateral_level} collateral.") from None
+
+
+def _months(n):
+    n = float(n)
+    text = f"{n:g}"
+    return f"{text} month" if n == 1 else f"{text} months"
+
+
+def limit_explanation(risk_category, collateral_level, tenure_months):
+    """One plain sentence describing how the policy set the limit, e.g.
+    "Moderate risk with high collateral: up to 100% of what your profit can repay over 12 months."
+    Collateral is only mentioned when it changes the share within that risk band."""
+    band = risk_category[:1].upper() + risk_category[1:].lower()
+    share = _share(risk_category, collateral_level)
+    if share <= 0:
+        return f"{band}: no loan limit is recommended."
+    band_shares = {float(v) for v in _policy()["share_of_affordable_by_band"][risk_category].values()}
+    lead = band if len(band_shares) == 1 else f"{band} with {collateral_level.lower()} collateral"
+    return f"{lead}: up to {share * 100:g}% of what your profit can repay over {_months(tenure_months)}."
+
+
+def affordability(loan_amount, monthly_profit_kes, tenure_months, risk_category, collateral_level):
+    policy = _policy()
     loan_amount = float(loan_amount)
     monthly_profit_kes = float(monthly_profit_kes)
     tenure_months = float(tenure_months)
+    round_to = float(policy["round_down_to"])
 
     monthly_repayment_estimate = round(loan_amount / tenure_months, 2)
-    affordable_limit = max(0.0, REPAYMENT_SHARE_OF_PROFIT * monthly_profit_kes * tenure_months)
+    affordable_limit = max(0.0, float(policy["max_repayment_share_of_profit"]) * monthly_profit_kes * tenure_months)
 
-    if risk_category == "Low Risk":
-        limit = min(loan_amount, affordable_limit)
-    elif risk_category == "Moderate Risk":
-        limit = min(loan_amount, MODERATE_RISK_SHARE * affordable_limit)
-    else:
-        limit = 0.0
-    limit = max(0.0, math.floor(limit / LIMIT_ROUND_TO) * LIMIT_ROUND_TO)
+    limit = affordable_limit * _share(risk_category, collateral_level)
+    if policy.get("never_exceed_requested", True):
+        limit = min(loan_amount, limit)
+    # Round to cents first so float noise (e.g. 455999.9999999) cannot drop a whole step.
+    limit = max(0.0, math.floor(round(limit, 2) / round_to) * round_to)
 
     return {
         "requested_amount": round(loan_amount, 2),
         "monthly_repayment_estimate": monthly_repayment_estimate,
         "affordable_limit": round(affordable_limit, 2),
         "recommended_limit": float(limit),
+        "limit_explanation": limit_explanation(risk_category, collateral_level, tenure_months),
     }
 # ---------------------------------------------------------------------------
 
@@ -326,12 +400,16 @@ def score(data: dict) -> dict:
         "shap_explanation": shap_explanation,
         "model_version": MODEL_VERSION,
         "out_of_range": _out_of_range(plain),
-        **affordability(plain["loan_amount_kes"], plain["monthly_profit_kes"], plain["tenure_months"], risk_category),
+        **affordability(
+            plain["loan_amount_kes"], plain["monthly_profit_kes"], plain["tenure_months"],
+            risk_category, plain["collateral_level"],
+        ),
     }
 
 
 def request_to_dict(credit_req) -> dict:
-    """The model inputs held on a CreditRequest. County is left out on purpose."""
+    """The answers on a CreditRequest that scoring needs. County is left out on purpose.
+    repayment_confidence stays on the model for history but is no longer read."""
     return {
         "sector": credit_req.sector,
         "legal_status": credit_req.legal_status,
@@ -348,7 +426,6 @@ def request_to_dict(credit_req) -> dict:
         "late_payment_history": credit_req.late_payment_history,
         "collateral_level": credit_req.collateral_level,
         "cashflow_stability": credit_req.cashflow_stability,
-        "repayment_confidence": credit_req.repayment_confidence,
         "owner_education": credit_req.owner_education,
         "days_payable_outstanding": credit_req.days_payable_outstanding,
     }

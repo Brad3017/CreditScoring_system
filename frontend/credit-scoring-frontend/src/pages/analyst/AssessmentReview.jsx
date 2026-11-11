@@ -107,7 +107,8 @@ export default function AssessmentReview() {
                 <Row label="Existing loans" value={r.existing_loans ? `Yes (${r.prior_loan_count} prior)` : "No"} />
                 <Row label="Late payment history" value={r.late_payment_history} />
                 <Row label="Collateral" value={r.collateral_level} />
-                <Row label="Repayment confidence (1–5)" value={r.repayment_confidence} />
+                {/* Asked only up to model v2; not shown when it was never asked. */}
+                {r.repayment_confidence != null && <Row label="Repayment confidence (1–5, earlier models only)" value={r.repayment_confidence} />}
                 <Row label="Business age" value={`${r.business_age_years} years`} />
                 <Row label="Employees" value={r.employees_count} />
                 <Row label="Legal status" value={r.legal_status} />

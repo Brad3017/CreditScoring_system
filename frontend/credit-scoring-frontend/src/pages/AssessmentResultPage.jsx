@@ -8,6 +8,7 @@ import AffordabilityPanel from "../components/AffordabilityPanel";
 import OutOfRangeNotice from "../components/OutOfRangeNotice";
 import ImprovementTips from "../components/ImprovementTips";
 import WhatIfPanel from "../components/WhatIfPanel";
+import LegacyTag from "../components/LegacyTag";
 import { getCurrentUser } from "../lib/api";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -98,7 +99,7 @@ export default function AssessmentResultPage() {
             <Fact label="Sector" value={assessment.sector || "Not recorded"} />
             <Fact label="County" value={assessment.county || "Not recorded"} />
             <Fact label="Monthly revenue" value={kes(assessment.monthly_revenue)} />
-            <Fact label="Model version" value={assessment.model_version || "Not recorded"} />
+            <Fact label="Model version" value={<>{assessment.model_version || "Not recorded"}<LegacyTag record={assessment} /></>} />
           </dl>
         </section>
       </div>
@@ -108,7 +109,8 @@ export default function AssessmentResultPage() {
         <ShapChart values={assessment.shap_values} legacyExplanation={assessment.explanation || []} learnLinks />
       </section>
 
-      {assessment.is_legacy || !assessment.shap_values?.length ? (
+      {/* Tips and the what-if use the current model; an earlier model's stored score is not comparable. */}
+      {assessment.is_current_model === false || assessment.is_legacy || !assessment.shap_values?.length ? (
         <p className="no-print" style={{ color: "var(--ink-2)", margin: 0 }}>
           The what-if tool is available for assessments made with the current model.
         </p>

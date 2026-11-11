@@ -56,6 +56,33 @@ function Matrix({ m }) {
   );
 }
 
+// One row per input set from report.feature_decisions; columns are whatever metrics the report holds.
+function FeatureDecisions({ decisions }) {
+  const rows = Object.entries(decisions);
+  const metrics = Object.keys(rows[0][1] || {});
+  const cell = (v) => (typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(3)) : v ?? "–");
+  return (
+    <div className="table-wrap">
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={th}>Input set</th>
+            {metrics.map((m) => <th key={m} style={{ ...th, textAlign: "right" }}>{m}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, values]) => (
+            <tr key={name}>
+              <th scope="row" style={{ ...td, fontWeight: /chosen/i.test(name) ? 700 : 400, textAlign: "left" }}>{name}</th>
+              {metrics.map((m) => <td key={m} style={{ ...td, textAlign: "right" }} className="num">{cell(values?.[m])}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function AdminModel() {
   const [user, setUser] = useState(null);
   const [d, setD] = useState(null);
@@ -157,6 +184,20 @@ export default function AdminModel() {
                 ))}
               </ul>
             </ChartCard>
+
+            {r?.feature_decisions && Object.keys(r.feature_decisions).length > 0 && (
+              <ChartCard title="Inputs tested for removal" subtitle="Cross-validated results from model_report.json">
+                <FeatureDecisions decisions={r.feature_decisions} />
+                {d.excluded_inputs?.length > 0 && (
+                  <p style={{ ...muted, margin: "var(--space-4) 0 0" }}>
+                    <strong>Not used by the model:</strong>{" "}
+                    {d.excluded_inputs.map((e, i) => (
+                      <span key={e.key}>{i > 0 && "; "}{e.label} ({e.reason})</span>
+                    ))}.
+                  </p>
+                )}
+              </ChartCard>
+            )}
 
             {r?.hyperparameters && (
               <ChartCard title="Hyperparameters" subtitle="Chosen by tuning in the notebook">

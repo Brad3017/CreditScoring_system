@@ -1,6 +1,6 @@
 {
   "model_name": "XGBoost MSME credit scorer",
-  "model_version": "xgb_msme_v2",
+  "model_version": "xgb_msme_v3",
   "target": "target_missed_payment",
   "features": [
     "sector",
@@ -17,9 +17,7 @@
     "existing_loans",
     "prior_loan_count",
     "late_payment_history",
-    "collateral_level",
     "cashflow_stability",
-    "repayment_confidence",
     "owner_education",
     "days_payable_outstanding"
   ],
@@ -75,11 +73,6 @@
       "Rarely": 1,
       "Sometimes": 2
     },
-    "collateral_level": {
-      "Low": 0,
-      "Moderate": 1,
-      "High": 2
-    },
     "owner_education": {
       "Primary": 0,
       "Secondary": 1,
@@ -98,7 +91,37 @@
   },
   "excluded_columns": {
     "county": "randomly assigned in the synthetic data; carries no information",
-    "business_id": "identifier"
+    "business_id": "identifier",
+    "repayment_confidence": "self-reported, unverifiable, could be gamed, and behaved counterintuitively",
+    "collateral_level": "affects recovery rather than likelihood of repayment; used in the loan limit policy instead"
+  },
+  "limit_policy": {
+    "max_repayment_share_of_profit": 0.4,
+    "share_of_affordable_by_band": {
+      "Low Risk": {
+        "Low": 1.0,
+        "Moderate": 1.0,
+        "High": 1.0
+      },
+      "Moderate Risk": {
+        "Low": 0.5,
+        "Moderate": 0.75,
+        "High": 1.0
+      },
+      "High Risk": {
+        "Low": 0.0,
+        "Moderate": 0.0,
+        "High": 0.0
+      }
+    },
+    "round_down_to": 1000,
+    "never_exceed_requested": true,
+    "collateral_levels": [
+      "Low",
+      "Moderate",
+      "High"
+    ],
+    "formula": "min(requested, floor_to_1000(0.40 * monthly_profit * tenure_months * share[band][collateral]))"
   },
   "score": {
     "formula": "clip(round(850 - 550 * pd), 300, 850)",

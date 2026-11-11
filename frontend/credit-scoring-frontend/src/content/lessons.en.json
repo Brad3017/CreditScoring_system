@@ -58,7 +58,7 @@
     "title": "What collateral is and why lenders ask for it",
     "summary": "Security gives a lender a way to recover money if a loan is not repaid.",
     "why": "Collateral, or security, is an asset the lender can claim if the loan isn't repaid. Common examples are a vehicle logbook, stock, equipment or a title deed. Stronger security lowers the lender's risk.",
-    "scoreLink": "In this system, offering stronger security lowers the assessed risk.",
+    "scoreLink": "In this system, collateral does not affect your risk score. It can increase the loan amount recommended when your risk is moderate, but never above what your profit can repay.",
     "steps": [
       "List the business assets you own, with any documents that prove ownership.",
       "Keep ownership documents such as logbooks and receipts organised and up to date.",

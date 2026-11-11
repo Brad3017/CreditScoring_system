@@ -2,14 +2,14 @@
 // owner can change. Sentences state the direction of an effect only; they never promise a score.
 import { Link } from "react-router-dom";
 import { muted } from "./analystUi";
-import { hasLesson } from "../lib/lessons";
+import { hasScoreLesson } from "../lib/lessons";
 
+// Collateral is not here: since model v3 it sets only the loan limit, never the score.
 const CHANGEABLE = [
   "loan_to_revenue",
   "tenure_months",
   "days_payable_outstanding",
   "cashflow_stability",
-  "collateral_level",
   "late_payment_history",
 ];
 
@@ -19,7 +19,6 @@ const HINT = {
   tenure_months: "Try other repayment periods in the what-if below.",
   days_payable_outstanding: "Try a different number of days in the what-if below.",
   cashflow_stability: "Try a different rating in the what-if below.",
-  collateral_level: "Try a different level of security in the what-if below.",
   late_payment_history: "Try other records in the what-if below to see how much weight this answer carries.",
 };
 
@@ -40,7 +39,7 @@ export default function ImprovementTips({ values }) {
           <li key={v.feature}>
             {v.label} {i === 0 ? "raised your risk the most among the answers you can change" : "also raised your risk"}.{" "}
             {HINT[v.feature]}
-            {hasLesson(v.feature) && (
+            {hasScoreLesson(v.feature) && (
               <>
                 {" "}
                 <Link to={`/learn/${v.feature}`} aria-label={`Read the guide: ${v.label}`} style={{ color: "var(--accent)", fontWeight: 600 }}>

@@ -1,0 +1,154 @@
+{
+  "model_name": "XGBoost MSME credit scorer",
+  "model_version": "xgb_msme_v3",
+  "target": "target_missed_payment",
+  "features": [
+    "sector",
+    "legal_status",
+    "location_type",
+    "loan_purpose",
+    "business_age_years",
+    "employees_count",
+    "monthly_revenue_kes",
+    "profit_margin",
+    "loan_amount_kes",
+    "loan_to_revenue",
+    "tenure_months",
+    "existing_loans",
+    "prior_loan_count",
+    "late_payment_history",
+    "cashflow_stability",
+    "owner_education",
+    "days_payable_outstanding"
+  ],
+  "feature_labels": {
+    "sector": "Sector",
+    "legal_status": "Legal structure",
+    "location_type": "Urban or rural",
+    "loan_purpose": "Loan purpose",
+    "business_age_years": "Business age",
+    "employees_count": "Employees",
+    "monthly_revenue_kes": "Monthly revenue",
+    "profit_margin": "Profit margin",
+    "loan_amount_kes": "Loan amount",
+    "loan_to_revenue": "Loan size relative to revenue",
+    "tenure_months": "Repayment period",
+    "existing_loans": "Has existing loans",
+    "prior_loan_count": "Number of previous loans",
+    "late_payment_history": "Late payment history",
+    "collateral_level": "Collateral",
+    "cashflow_stability": "Cash-flow stability",
+    "repayment_confidence": "Repayment confidence",
+    "owner_education": "Owner education",
+    "days_payable_outstanding": "Days taken to pay suppliers"
+  },
+  "nominal_categories": {
+    "sector": [
+      "Agriculture",
+      "Manufacturing",
+      "Retail",
+      "Services"
+    ],
+    "legal_status": [
+      "Limited",
+      "Partnership",
+      "Sole"
+    ],
+    "location_type": [
+      "Rural",
+      "Urban"
+    ],
+    "loan_purpose": [
+      "Equipment",
+      "Expansion",
+      "Inventory",
+      "Renovation",
+      "Working capital"
+    ]
+  },
+  "nominal_encoding": "integer code = position in the category list",
+  "ordinal_mappings": {
+    "late_payment_history": {
+      "Never": 0,
+      "Rarely": 1,
+      "Sometimes": 2
+    },
+    "owner_education": {
+      "Primary": 0,
+      "Secondary": 1,
+      "Higher Secondary": 2,
+      "Bachelor's": 3,
+      "Master's": 4
+    },
+    "existing_loans": {
+      "No": 0,
+      "Yes": 1
+    }
+  },
+  "derived_features": {
+    "profit_margin": "monthly_profit_kes / monthly_revenue_kes",
+    "loan_to_revenue": "loan_amount_kes / monthly_revenue_kes"
+  },
+  "excluded_columns": {
+    "county": "randomly assigned in the synthetic data; carries no information",
+    "business_id": "identifier",
+    "repayment_confidence": "self-reported, unverifiable, could be gamed, and behaved counterintuitively",
+    "collateral_level": "affects recovery rather than likelihood of repayment; used in the loan limit policy instead"
+  },
+  "limit_policy": {
+    "max_repayment_share_of_profit": 0.4,
+    "share_of_affordable_by_band": {
+      "Low Risk": {
+        "Low": 1.0,
+        "Moderate": 1.0,
+        "High": 1.0
+      },
+      "Moderate Risk": {
+        "Low": 0.5,
+        "Moderate": 0.75,
+        "High": 1.0
+      },
+      "High Risk": {
+        "Low": 0.0,
+        "Moderate": 0.0,
+        "High": 0.0
+      }
+    },
+    "round_down_to": 1000,
+    "never_exceed_requested": true,
+    "collateral_levels": [
+      "Low",
+      "Moderate",
+      "High"
+    ],
+    "formula": "min(requested, floor_to_1000(0.40 * monthly_profit * tenure_months * share[band][collateral]))"
+  },
+  "score": {
+    "formula": "clip(round(850 - 550 * pd), 300, 850)",
+    "min": 300,
+    "max": 850,
+    "span": 550
+  },
+  "risk_bands": [
+    {
+      "label": "Low Risk",
+      "pd_max_inclusive": 0.272727,
+      "score_range": "700-850"
+    },
+    {
+      "label": "Moderate Risk",
+      "pd_between": [
+        0.272727,
+        0.638182
+      ],
+      "score_range": "500-699"
+    },
+    {
+      "label": "High Risk",
+      "pd_min_inclusive": 0.638182,
+      "score_range": "300-499"
+    }
+  ],
+  "shap_units": "log-odds of default; positive raises risk",
+  "training_rows": 5000
+}

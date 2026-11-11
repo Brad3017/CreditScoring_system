@@ -1,4 +1,6 @@
 // Requested amount, flat monthly repayment estimate and recommended limit, all from the API.
+// limit_explanation is the server's sentence for how the limit policy set the limit (model v3);
+// it is null for records scored by an earlier model, whose limit came from the rule in use then.
 import { muted } from "./analystUi";
 
 const kes = (n) => (n == null ? "Not recorded" : `KES ${Math.round(Number(n)).toLocaleString("en-KE")}`);
@@ -18,7 +20,7 @@ export default function AffordabilityPanel({ assessment: a }) {
     <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "var(--space-5)", margin: 0 }}>
       <Item label="Requested amount" value={kes(a.requested_amount)} note={a.loan_purpose ? `For ${a.loan_purpose.toLowerCase()}` : null} />
       <Item label="Estimated monthly repayment" value={kes(a.monthly_repayment_estimate)} note="Flat estimate, excluding interest" />
-      <Item label="Recommended limit" value={kes(a.recommended_limit)} />
+      <Item label="Recommended limit" value={kes(a.recommended_limit)} note={a.limit_explanation || null} />
     </dl>
   );
 }

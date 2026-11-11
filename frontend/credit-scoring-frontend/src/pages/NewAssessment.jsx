@@ -41,8 +41,9 @@ const INITIAL = {
   prior_loan_count: "1",
   late_payment_history: "Never",
   collateral_level: "Moderate",
-  repayment_confidence: "4",
 };
+
+const COLLATERAL_HINT = "Collateral doesn't affect your risk score. It can increase the loan amount recommended for moderate-risk applications.";
 
 // Must match nominal_categories.loan_purpose in ml_artifacts/model_metadata.json.
 const LOAN_PURPOSES = ["Equipment", "Expansion", "Inventory", "Renovation", "Working capital"];
@@ -76,13 +77,14 @@ function validate(step, f) {
   if (step === 3) {
     if (!isWhole(f.prior_loan_count, 0, 1000)) e.prior_loan_count = "Enter a whole number, 0 or more.";
     if (!["Never", "Rarely", "Sometimes"].includes(f.late_payment_history)) e.late_payment_history = "Choose a repayment record from the list.";
-    if (!isWhole(f.repayment_confidence, 1, 5)) e.repayment_confidence = "Choose a value from 1 to 5.";
+    if (!["Low", "Moderate", "High"].includes(f.collateral_level)) e.collateral_level = "Choose a level of security from the list.";
   }
   return e;
 }
 
 // Converts the form's strings into the types the API expects.
-function toPayload(f) {
+// repayment_confidence is no longer asked (model v3); an older saved draft may still hold it, so drop it.
+function toPayload({ repayment_confidence: _unused, ...f }) {
   return {
     ...f,
     kra_pin: normaliseKraPin(f.kra_pin),
@@ -95,7 +97,6 @@ function toPayload(f) {
     days_payable_outstanding: Number(f.days_payable_outstanding),
     cashflow_stability: Number(f.cashflow_stability),
     prior_loan_count: Number(f.prior_loan_count),
-    repayment_confidence: Number(f.repayment_confidence),
   };
 }
 
@@ -246,9 +247,8 @@ export default function NewAssessment() {
           <SelectField label="Repayment record" name="late_payment_history" value={form.late_payment_history} onChange={update} error={errors.late_payment_history}
             options={[["Never", "Never late"], ["Rarely", "Rarely late (one delay)"], ["Sometimes", "Sometimes late (two or more delays)"]]} />
           <SelectField label="Security you can offer" name="collateral_level" value={form.collateral_level} onChange={update}
+            error={errors.collateral_level} hint={COLLATERAL_HINT}
             options={[["Low", "Low – personal guarantee or household"], ["Moderate", "Moderate – stock or vehicle logbook"], ["High", "High – title deed or fixed deposit"]]} />
-          <SelectField label="How confident are you in repaying?" name="repayment_confidence" value={form.repayment_confidence} onChange={update} error={errors.repayment_confidence}
-            options={[["1", "1 – Low, with strain"], ["2", "2 – Somewhat uncertain"], ["3", "3 – Moderate"], ["4", "4 – High"], ["5", "5 – Certain"]]} />
         </Section>
       )}
 
@@ -337,15 +337,17 @@ function Field({ label, name, error, required, hint, readOnly, ...rest }) {
   );
 }
 
-function SelectField({ label, name, options, error, ...rest }) {
+function SelectField({ label, name, options, error, hint, ...rest }) {
   const id = `f-${name}`;
+  const describedBy = error ? `${id}-err` : hint ? `${id}-hint` : undefined;
   return (
     <div>
       <Label text={label} htmlFor={id} />
-      <select id={id} name={name} aria-invalid={!!error} aria-describedby={error ? `${id}-err` : undefined} style={controlStyle} {...rest}>
+      <select id={id} name={name} aria-invalid={!!error} aria-describedby={describedBy} style={controlStyle} {...rest}>
         {options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
       </select>
       {error && <p id={`${id}-err`} style={{ color: "var(--risk-high)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{error}</p>}
+      {hint && !error && <p id={`${id}-hint`} style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" }}>{hint}</p>}
     </div>
   );
 }

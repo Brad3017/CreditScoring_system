@@ -1,0 +1,77 @@
+{
+  "source": "02_model_training.ipynb, tuned XGBoost, scored once on 240 held-out records",
+  "data_note": "Trained on synthetic data generated from a Bangladeshi SME dataset (itself likely simulated) and tested on its held-out records. These figures demonstrate the method; they do not predict performance on real Kenyan MSME borrowers.",
+  "test_rows": 240,
+  "classes": {
+    "on_time": 179,
+    "default": 61
+  },
+  "roc_auc": 0.8362,
+  "pr_auc": 0.668,
+  "accuracy": 0.7875,
+  "brier": 0.1324,
+  "decision_point": "Flagged = Moderate or High risk (PD > 0.2727)",
+  "per_class": [
+    {
+      "name": "On-time (0)",
+      "precision": 0.8902,
+      "recall": 0.8156,
+      "f1": 0.8513
+    },
+    {
+      "name": "Missed payment (1)",
+      "precision": 0.5658,
+      "recall": 0.7049,
+      "f1": 0.6277
+    }
+  ],
+  "confusion_matrix": {
+    "tn": 146,
+    "fp": 33,
+    "fn": 18,
+    "tp": 43
+  },
+  "cv_roc_auc": 0.9132,
+  "oof_band_default_rates": {
+    "Low Risk": 0.0677,
+    "Moderate Risk": 0.4535,
+    "High Risk": 0.821
+  },
+  "hyperparameters": {
+    "subsample": 0.7,
+    "reg_lambda": 1,
+    "n_estimators": 600,
+    "min_child_weight": 3,
+    "max_depth": 2,
+    "learning_rate": 0.08,
+    "gamma": 0.3,
+    "colsample_bytree": 1.0
+  },
+  "model_version": "xgb_msme_v3",
+  "feature_decisions": {
+    "All 19 inputs": {
+      "inputs": 19.0,
+      "CV AUC": 0.916,
+      "CV PR-AUC": 0.798,
+      "Brier (lower is better)": 0.098
+    },
+    "Without repayment confidence": {
+      "inputs": 18.0,
+      "CV AUC": 0.914,
+      "CV PR-AUC": 0.795,
+      "Brier (lower is better)": 0.099
+    },
+    "Without collateral": {
+      "inputs": 18.0,
+      "CV AUC": 0.903,
+      "CV PR-AUC": 0.776,
+      "Brier (lower is better)": 0.104
+    },
+    "Without both (chosen)": {
+      "inputs": 17.0,
+      "CV AUC": 0.902,
+      "CV PR-AUC": 0.777,
+      "Brier (lower is better)": 0.104
+    }
+  }
+}
