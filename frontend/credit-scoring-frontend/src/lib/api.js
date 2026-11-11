@@ -7,6 +7,7 @@ export const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
 // the session cleared and the user sent to /login with SESSION_EXPIRED_MESSAGE.
 // ---------------------------------------------------------------------------
 export const SESSION_EXPIRED_MESSAGE = "Your session expired. Sign in again.";
+export const SESSION_CHANGED_MESSAGE = "You were signed in as a different account. Sign in again.";
 const SESSION_EXPIRED_KEY = "session_expired_message";
 const NETWORK_MESSAGE = "We could not reach the server. Check your connection and try again.";
 
@@ -22,6 +23,9 @@ function refreshAccess() {
       body: JSON.stringify({ refresh }),
     })
       .then(async (res) => {
+        // Someone signed in or out (here or in another tab) while this refresh was in flight:
+        // never write the old session's tokens over the new one.
+        if (localStorage.getItem("refresh") !== refresh) return "ok";
         if (!res.ok) return "rejected";
         const body = await res.json();
         if (!body.access) return "rejected";
@@ -38,10 +42,10 @@ function refreshAccess() {
   return refreshing;
 }
 
-function expireSession() {
+function expireSession(message = SESSION_EXPIRED_MESSAGE) {
   clearSession();
   try {
-    sessionStorage.setItem(SESSION_EXPIRED_KEY, SESSION_EXPIRED_MESSAGE);
+    sessionStorage.setItem(SESSION_EXPIRED_KEY, message);
   } catch {
     // Storage unavailable: the login page simply shows no message.
   }
@@ -150,29 +154,60 @@ function fieldError(body, fallback) {
   return err;
 }
 
+// A session is always all four of access, refresh, role and user, written or cleared together,
+// so one account's tokens can never sit next to another account's user/role.
+const SESSION_KEYS = ["access", "refresh", "role", "user"];
+
 export function saveSession(access, refresh, role, user) {
-  if (access) localStorage.setItem("access", access);
-  if (refresh) localStorage.setItem("refresh", refresh);
-  if (role) localStorage.setItem("role", role);
-  if (user) storeUser(user);
+  if (!access || !refresh || !role || !user?.id || !user?.email) {
+    // Refuse a partial session rather than keep pieces of a previous one.
+    clearSession();
+    throw new Error("Sign-in did not complete. Please try again.");
+  }
+  clearSession();
+  localStorage.setItem("access", access);
+  localStorage.setItem("refresh", refresh);
+  localStorage.setItem("role", role);
+  localStorage.setItem("user", JSON.stringify({ id: user.id, email: user.email, full_name: user.full_name || "", role: user.role || role }));
 }
 
 export function clearSession() {
-  localStorage.removeItem("access");
-  localStorage.removeItem("refresh");
-  localStorage.removeItem("role");
-  localStorage.removeItem("user");
+  SESSION_KEYS.forEach((k) => localStorage.removeItem(k));
 }
 
-// The signed-in user's display details (id, email, full_name, role), kept with the session
-// so the first page does not need a /auth/me/ round trip.
+// The signed-in user's display details (id, email, full_name, role), kept with the session so the
+// first page does not need a /auth/me/ round trip. Only ever updated for the SAME account:
+// details of a different user are never merged into the stored one.
 function storeUser(user) {
   try {
-    const prev = JSON.parse(localStorage.getItem("user") || "{}");
+    const prev = JSON.parse(localStorage.getItem("user") || "null");
+    if (!prev || !user || prev.id !== user.id) return;
     localStorage.setItem("user", JSON.stringify({ ...prev, ...user }));
   } catch {
     // Storage unavailable: pages fall back to fetchMe().
   }
+}
+
+// Run once when the app loads. The token decides who the server thinks you are; if that is not
+// the user (id, email, role) stored with the session, the session is cleared and you sign in again.
+// Returns "none" | "ok" | "mismatch" | "expired" | "unverified" (server unreachable: session kept).
+export async function verifySession() {
+  if (!getToken()) return "none";
+  let res;
+  try {
+    res = await authFetch(`${BASE}/auth/me/`);
+  } catch (e) {
+    return e?.sessionExpired ? "expired" : "unverified";
+  }
+  if (!res.ok) return "unverified";
+  const me = await res.json();
+  const stored = getSessionUser();
+  if (!stored || stored.id !== me.id || stored.email !== me.email || getRole() !== me.role) {
+    expireSession(SESSION_CHANGED_MESSAGE);
+    return "mismatch";
+  }
+  storeUser(me);
+  return "ok";
 }
 
 export function getSessionUser() {

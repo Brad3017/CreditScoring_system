@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
@@ -10,7 +10,7 @@ import MyAssessments from "./pages/MyAssessments";
 import BusinessProfilePage from "./pages/BusinessProfilePage";
 import Learn from "./pages/Learn";
 import LearnLesson from "./pages/LearnLesson";
-import { getToken, getRole } from "./lib/api";
+import { getToken, getRole, verifySession } from "./lib/api";
 
 // Staff pages are split into their own chunks, so business owners never download them.
 const AnalystDashboard = lazy(() => import("./pages/AnalystDashboard"));
@@ -52,7 +52,41 @@ function AdminOnly({ children }) {
 }
 
 
+// Before any page sends a request, check that the stored session's user is the one the token belongs
+// to (GET /api/auth/me/). A mismatch clears the session and goes to /login (see verifySession).
+function useVerifiedSession() {
+  const [ready, setReady] = useState(() => !getToken());
+  useEffect(() => {
+    if (ready) return;
+    verifySession().then((result) => {
+      if (result !== "mismatch" && result !== "expired") setReady(true); // otherwise we are leaving for /login
+    });
+  }, [ready]);
+  return ready;
+}
+
+// localStorage is shared by every tab. If another tab signs in as a different account (or signs out),
+// this tab must not keep sending requests with that account's token: reload, so the route guards and
+// the session check run again for whoever is now signed in.
+function useSessionSyncAcrossTabs() {
+  useEffect(() => {
+    const idOf = (raw) => {
+      try { return JSON.parse(raw || "null")?.id ?? null; } catch { return null; }
+    };
+    function onStorage(e) {
+      // e.key is null when another tab cleared all storage.
+      if (e.key !== null && e.key !== "user") return;
+      if (idOf(e.oldValue) !== idOf(e.newValue)) window.location.reload();
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+}
+
 export default function App() {
+  const ready = useVerifiedSession();
+  useSessionSyncAcrossTabs();
+  if (!ready) return <PageLoading />;
   return (
     <BrowserRouter>
       <Suspense fallback={<PageLoading />}>

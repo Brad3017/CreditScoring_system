@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { signup, saveSession } from "../lib/api";
+import { signup, saveSession, clearSession } from "../lib/api";
 import AuthShell, { Field, PasswordField, ErrorNote } from "../components/AuthShell";
+
+const HOME_FOR_ROLE = { owner: "/home", analyst: "/analyst", admin: "/console" };
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -34,14 +36,18 @@ export default function Signup() {
     }
 
     setBusy(true);
+    // Whoever was signed in before (e.g. an admin testing in this browser) is signed out first,
+    // so none of their tokens or details can carry over to the new account.
+    clearSession();
     try {
       const data = await signup({
         full_name: form.full_name,
         email: form.email,
         password: form.password,
       });
-      saveSession(data.access, data.refresh, data.user.role);
-      navigate("/home");
+      // The new account's own tokens, role and user, all together.
+      saveSession(data.access, data.refresh, data.user?.role, data.user);
+      navigate(HOME_FOR_ROLE[data.user.role] || "/home", { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
