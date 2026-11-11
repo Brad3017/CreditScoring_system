@@ -13,7 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import CreditAssessment
+from .models import CreditAssessment, LessonView
 from . import services
 
 User = get_user_model()
@@ -91,6 +91,12 @@ class AdminOverviewView(APIView):
             for r in qs.annotate(m=TruncMonth("created_at")).values("m").annotate(n=Count("id")).order_by("m")
         ]
 
+        # "Learn" lessons opened (one count per owner per lesson per day). Titles live in the frontend.
+        lesson_views = [
+            {"feature_key": r["feature_key"], "views": r["n"]}
+            for r in LessonView.objects.values("feature_key").annotate(n=Count("id")).order_by("-n", "feature_key")
+        ]
+
         users = {"owner": 0, "analyst": 0, "admin": 0}
         for row in User.objects.values("role").annotate(n=Count("id")):
             users[row["role"]] = row["n"]
@@ -108,6 +114,7 @@ class AdminOverviewView(APIView):
             "counties": by("county", limit=10),
             "monthly": monthly,
             "users": users,
+            "lesson_views": lesson_views,
         })
 
 

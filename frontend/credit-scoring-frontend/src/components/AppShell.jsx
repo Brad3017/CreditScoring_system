@@ -6,6 +6,7 @@ const links = [
   { to: "/assessment/new", label: "New assessment" },
   { to: "/assessments", label: "History" },
   { to: "/analytics", label: "Analytics" },
+  { to: "/learn", label: "Learn" },
   { to: "/profile", label: "Business profile" },
 ];
 

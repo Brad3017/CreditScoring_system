@@ -1,0 +1,101 @@
+{
+  "late_payment_history": {
+    "title": "Why paying on time matters most",
+    "summary": "Your repayment record is the strongest signal of how you'll handle a new loan.",
+    "why": "Lenders look first at how you have repaid before. A business that has paid loans and bills on time is seen as likely to do so again. In Kenya, lenders can also report late loan repayments to credit reference bureaus (CRBs), which other lenders check.",
+    "scoreLink": "In this system, a history of late payments raises the assessed risk more than any other answer.",
+    "steps": [
+      "Set repayment reminders a few days before each due date, or use automatic payments where your lender offers them.",
+      "If you expect to miss a payment, talk to your lender before the due date. Agreeing a new date is better than paying late without notice.",
+      "Clear any small overdue balances first. A clean recent record matters most."
+    ]
+  },
+  "days_payable_outstanding": {
+    "title": "Why paying suppliers late affects your credit",
+    "summary": "How quickly you pay suppliers shows whether your cash covers your obligations.",
+    "why": "Taking a long time to pay suppliers can be a sign that money is tight. It can also damage supplier relationships, so you may lose credit terms or discounts. Lenders read it as a warning about cash pressure.",
+    "scoreLink": "In this system, taking more days to pay suppliers tends to raise the assessed risk.",
+    "steps": [
+      "Agree clear payment terms with each supplier and keep to them.",
+      "Plan payments around when your own customers pay you, so money arrives before bills are due.",
+      "If you need longer, negotiate it openly. Agreed terms are better than paying late."
+    ]
+  },
+  "cashflow_stability": {
+    "title": "Steady cash flow: why predictability counts",
+    "summary": "Lenders want to see that money comes in regularly enough to cover repayments.",
+    "why": "Even a profitable business can struggle to repay if its income arrives in unpredictable bursts. Regular, predictable sales make it easier to meet a fixed monthly repayment.",
+    "scoreLink": "In this system, steadier cash flow lowers the assessed risk.",
+    "steps": [
+      "Keep simple weekly records of money in and money out, so you can see your patterns.",
+      "Build a small reserve in good months to cover quieter ones.",
+      "Look for steady income sources, such as regular customers or contracts, alongside one-off sales."
+    ]
+  },
+  "loan_to_revenue": {
+    "title": "Borrowing the right amount for your business",
+    "summary": "A loan that is large compared with your sales is harder to repay.",
+    "why": "Lenders compare the size of the loan with how much your business earns. When a loan is many times your monthly sales, repayments take a big share of your income, and there is less room for a bad month.",
+    "scoreLink": "In this system, a larger loan relative to your monthly revenue raises the assessed risk.",
+    "steps": [
+      "Work out exactly what the loan is for, and borrow only what that needs.",
+      "Use the scenario tool on your report to see how a smaller amount changes your result.",
+      "Consider borrowing in stages: a smaller first loan, repaid well, can support a larger one later."
+    ]
+  },
+  "tenure_months": {
+    "title": "Choosing a repayment period you can manage",
+    "summary": "The repayment period sets how much you pay each month.",
+    "why": "A shorter period means larger monthly repayments. A longer period means smaller monthly repayments, but usually more interest in total. The right period is one where the monthly amount fits comfortably within your cash flow.",
+    "scoreLink": "In this system, the repayment period affects your result together with the loan size and your income.",
+    "steps": [
+      "Before applying, check what monthly repayment you could pay in your quietest month.",
+      "Compare the monthly repayment and the total cost for two or three different periods.",
+      "Avoid a period so short that repayments take most of your profit."
+    ]
+  },
+  "collateral_level": {
+    "title": "What collateral is and why lenders ask for it",
+    "summary": "Security gives a lender a way to recover money if a loan is not repaid.",
+    "why": "Collateral, or security, is an asset the lender can claim if the loan isn't repaid. Common examples are a vehicle logbook, stock, equipment or a title deed. Stronger security lowers the lender's risk.",
+    "scoreLink": "In this system, offering stronger security lowers the assessed risk.",
+    "steps": [
+      "List the business assets you own, with any documents that prove ownership.",
+      "Keep ownership documents such as logbooks and receipts organised and up to date.",
+      "Understand what you could lose before pledging an asset. Only offer security you are prepared to commit."
+    ]
+  },
+  "profit_margin": {
+    "title": "Profit margin: what your business keeps",
+    "summary": "It's not only how much you sell, but how much of it you keep.",
+    "why": "Profit margin is the share of your sales left after costs. A healthy margin means money is available for repayments, even after paying for stock, rent and wages. A thin margin leaves little room for repayments or surprises.",
+    "scoreLink": "In this system, a higher profit margin generally lowers the assessed risk.",
+    "steps": [
+      "Track your main costs every month, so you know where money goes.",
+      "Review your prices against your costs, especially when supplier prices rise.",
+      "Cut or renegotiate costs that don't help you sell more."
+    ]
+  },
+  "existing_loans": {
+    "title": "Managing more than one loan",
+    "summary": "Loans you already have reduce what you can afford to repay on a new one.",
+    "why": "Lenders consider all the loans you are currently repaying, including mobile loans. Several loans at once can stretch your cash flow, and missing one can affect your record with all lenders.",
+    "scoreLink": "In this system, whether you already have loans running is one of the factors considered.",
+    "steps": [
+      "Write down every loan you have, with its monthly repayment and end date.",
+      "Try to finish or reduce existing loans before taking a new one.",
+      "Avoid taking a new loan to repay an old one unless the terms are clearly better."
+    ]
+  },
+  "prior_loan_count": {
+    "title": "Building a borrowing track record",
+    "summary": "Loans repaid in the past help a lender trust you with a new one.",
+    "why": "A history of loans that were taken and repaid shows lenders how you behave as a borrower. Businesses with no history are harder for lenders to judge.",
+    "scoreLink": "In this system, your number of previous loans is one of the factors considered, together with how you repaid them.",
+    "steps": [
+      "Start with a small loan you are confident you can repay, and repay it on time.",
+      "Keep records of loans you have repaid, such as statements and clearance letters.",
+      "Remember that how you repaid matters more than how many loans you took."
+    ]
+  }
+}

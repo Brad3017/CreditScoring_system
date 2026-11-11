@@ -8,6 +8,8 @@ import Analytics from "./pages/Analytics";
 import AssessmentResultPage from './pages/AssessmentResultPage';
 import MyAssessments from "./pages/MyAssessments";
 import BusinessProfilePage from "./pages/BusinessProfilePage";
+import Learn from "./pages/Learn";
+import LearnLesson from "./pages/LearnLesson";
 import { getToken, getRole } from "./lib/api";
 
 // Staff pages are split into their own chunks, so business owners never download them.
@@ -65,6 +67,9 @@ export default function App() {
         <Route path="/analyst/msmes" element={<AnalystOnly><MsmeRecords /></AnalystOnly>} />
         <Route path="/analyst/analytics" element={<AnalystOnly><RiskAnalytics /></AnalystOnly>} />
         <Route path="/analyst/reviews" element={<AnalystOnly><ReviewHistory /></AnalystOnly>} />
+
+        <Route path="/learn" element={<OwnerOnly><Learn /></OwnerOnly>} />
+        <Route path="/learn/:key" element={<OwnerOnly><LearnLesson /></OwnerOnly>} />
 
         <Route path="/console" element={<AdminOnly><AdminOverview /></AdminOnly>} />
         <Route path="/console/model" element={<AdminOnly><AdminModel /></AdminOnly>} />

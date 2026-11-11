@@ -530,3 +530,102 @@ class BusinessProfileRoundTripTests(TestCase):
         self.assertEqual(got["business_name"], LOW_RISK["business_name"])  # was empty -> filled
         self.assertEqual(got["kra_pin"], "P999999999Z")                     # was empty -> filled
         self.assertEqual(got["sector"], "Services")                        # saved -> kept
+
+
+
+# ---------------------------------------------------------------------------
+# "Learn" lessons and lesson views
+# ---------------------------------------------------------------------------
+import unittest
+from pathlib import Path
+
+CONTENT_DIR = Path(settings.BASE_DIR) / "frontend" / "credit-scoring-frontend" / "src" / "content"
+LESSON_FIELDS = {"title", "summary", "why", "scoreLink", "steps"}
+
+
+@unittest.skipUnless((CONTENT_DIR / "lessons.en.json").exists(),
+                     "frontend/ is not in this image (.dockerignore); run with the repo mounted at /app")
+class LessonContentTests(SimpleTestCase):
+    def load(self, name):
+        with open(CONTENT_DIR / name, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_every_key_is_a_real_model_feature(self):
+        features = set(json.load(open(settings.ML_ARTIFACTS_DIR / "model_metadata.json", encoding="utf-8"))["features"])
+        unknown = set(self.load("lessons.en.json")) - features
+        self.assertEqual(unknown, set(), f"lesson keys that are not model features: {unknown}")
+
+    def test_every_lesson_has_five_fields_and_three_steps(self):
+        for key, lesson in self.load("lessons.en.json").items():
+            self.assertEqual(set(lesson), LESSON_FIELDS, key)
+            for field in LESSON_FIELDS - {"steps"}:
+                self.assertTrue(isinstance(lesson[field], str) and lesson[field].strip(), f"{key}.{field}")
+            self.assertEqual(len(lesson["steps"]), 3, key)
+            self.assertTrue(all(isinstance(x, str) and x.strip() for x in lesson["steps"]), key)
+
+    def test_translations_use_the_same_keys_and_shape(self):
+        # e.g. lessons.sw.json, added later: only keys that exist in English, same five fields.
+        english = set(self.load("lessons.en.json"))
+        for path in CONTENT_DIR.glob("lessons.*.json"):
+            if path.name == "lessons.en.json":
+                continue
+            other = self.load(path.name)
+            self.assertLessEqual(set(other), english, path.name)
+            for key, lesson in other.items():
+                self.assertEqual(set(lesson), LESSON_FIELDS, f"{path.name}:{key}")
+                self.assertEqual(len(lesson["steps"]), 3, f"{path.name}:{key}")
+
+
+class LessonViewTests(TestCase):
+    url = "/api/learn/viewed/"
+
+    def setUp(self):
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="lv", email="lv@test.ke", password="x", role="owner")
+
+    def post(self, key="late_payment_history"):
+        return self.client.post(self.url, {"feature_key": key}, format="json")
+
+    def test_owner_recorded_once_per_day(self):
+        from .models import LessonView
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.post().status_code, 201)
+        self.assertEqual(self.post().status_code, 200)   # same lesson, same day: not recorded again
+        self.assertEqual(self.post("cashflow_stability").status_code, 201)
+        self.assertEqual(LessonView.objects.filter(user=self.owner).count(), 2)
+
+    def test_next_day_is_recorded_again(self):
+        import datetime
+        from unittest import mock
+        from .models import LessonView
+        self.client.force_authenticate(self.owner)
+        self.post()
+        with mock.patch("scoring.views.timezone.localdate", return_value=datetime.date.today() + datetime.timedelta(days=1)):
+            self.assertEqual(self.post().status_code, 201)
+        self.assertEqual(LessonView.objects.filter(user=self.owner, feature_key="late_payment_history").count(), 2)
+
+    def test_owners_only(self):
+        self.assertEqual(self.post().status_code, 401)
+        for role in ("analyst", "admin"):
+            staff = User.objects.create_user(username=role, email=f"{role}@lv.ke", password="x", role=role)
+            self.client.force_authenticate(staff)
+            self.assertEqual(self.post().status_code, 403, role)
+
+    def test_unknown_key_rejected(self):
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.post("not_a_feature").status_code, 400)
+
+    def test_admin_overview_counts_views(self):
+        self.client.force_authenticate(self.owner)
+        self.post("late_payment_history")
+        self.post("cashflow_stability")
+        other = User.objects.create_user(username="lv2", email="lv2@test.ke", password="x", role="owner")
+        self.client.force_authenticate(other)
+        self.post("late_payment_history")
+        admin = User.objects.create_user(username="lva", email="lva@test.ke", password="x", role="admin")
+        self.client.force_authenticate(admin)
+        body = self.client.get("/api/scoring/admin/overview/").json()
+        self.assertEqual(body["lesson_views"], [
+            {"feature_key": "late_payment_history", "views": 2},
+            {"feature_key": "cashflow_stability", "views": 1},
+        ])

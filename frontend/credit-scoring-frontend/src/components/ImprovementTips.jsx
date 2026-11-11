@@ -1,6 +1,8 @@
 // "What would improve this score": the largest risk-raising SHAP values among the answers an
 // owner can change. Sentences state the direction of an effect only; they never promise a score.
+import { Link } from "react-router-dom";
 import { muted } from "./analystUi";
+import { hasLesson } from "../lib/lessons";
 
 const CHANGEABLE = [
   "loan_to_revenue",
@@ -38,6 +40,14 @@ export default function ImprovementTips({ values }) {
           <li key={v.feature}>
             {v.label} {i === 0 ? "raised your risk the most among the answers you can change" : "also raised your risk"}.{" "}
             {HINT[v.feature]}
+            {hasLesson(v.feature) && (
+              <>
+                {" "}
+                <Link to={`/learn/${v.feature}`} aria-label={`Read the guide: ${v.label}`} style={{ color: "var(--accent)", fontWeight: 600 }}>
+                  Read the guide
+                </Link>
+              </>
+            )}
           </li>
         ))}
       </ul>

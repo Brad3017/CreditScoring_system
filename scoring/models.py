@@ -143,3 +143,19 @@ class CreditAssessment(models.Model):
 
     def __str__(self):
         return f"Assessment #{self.id} - Score: {self.credit_score} ({self.risk_category})"
+
+
+class LessonView(models.Model):
+    """An owner opened a "Learn" lesson. At most one row per user, lesson and day."""
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lesson_views")
+    feature_key = models.CharField(max_length=50)  # a model feature key, e.g. "late_payment_history"
+    viewed_at = models.DateTimeField(auto_now_add=True)
+    viewed_on = models.DateField()  # local date of viewed_at; carries the once-per-day rule
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "feature_key", "viewed_on"], name="one_lesson_view_per_user_per_day"),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} read {self.feature_key} on {self.viewed_on}"

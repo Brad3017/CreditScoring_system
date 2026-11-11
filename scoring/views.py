@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import UserRateThrottle
 
-from .models import CreditRequest, CreditAssessment, BusinessProfile, KRA_PIN_DUPLICATE_MESSAGE
+from .models import CreditRequest, CreditAssessment, BusinessProfile, LessonView, KRA_PIN_DUPLICATE_MESSAGE
 from .serializers import (
     CreditRequestSerializer,
     CreditAssessmentSerializer,
@@ -14,7 +14,7 @@ from .serializers import (
     KraPinSerializer,
     MODEL_INPUT_FIELDS,
 )
-from .services import evaluate_credit_request, MODEL_VERSION
+from .services import evaluate_credit_request, MODEL_VERSION, FEATURES
 
 
 class IsAnalystOrAdmin(IsAuthenticated):
@@ -366,3 +366,22 @@ class BusinessProfileView(APIView):
             # Same PIN saved by another business between validation and this write.
             return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.data)
+
+
+
+class LessonViewedView(APIView):
+    """POST /api/learn/viewed/ {feature_key}: records that an owner opened a lesson.
+    At most one row per user, lesson and day: 201 when recorded, 200 when already recorded today."""
+    permission_classes = [IsOwner]
+
+    def post(self, request):
+        key = str(request.data.get("feature_key") or "").strip()
+        if key not in FEATURES:
+            return Response({"feature_key": ["Unknown lesson."]}, status=status.HTTP_400_BAD_REQUEST)
+        today = timezone.localdate()
+        try:
+            with transaction.atomic():
+                _, created = LessonView.objects.get_or_create(user=request.user, feature_key=key, viewed_on=today)
+        except IntegrityError:
+            created = False  # a parallel request recorded it first
+        return Response({"recorded": created}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

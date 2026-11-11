@@ -105,7 +105,7 @@ export default function AssessmentResultPage() {
 
       <section className="panel" aria-labelledby="factors-heading">
         <div className="panel-head"><h2 id="factors-heading">What shaped this result</h2></div>
-        <ShapChart values={assessment.shap_values} legacyExplanation={assessment.explanation || []} />
+        <ShapChart values={assessment.shap_values} legacyExplanation={assessment.explanation || []} learnLinks />
       </section>
 
       {assessment.is_legacy || !assessment.shap_values?.length ? (

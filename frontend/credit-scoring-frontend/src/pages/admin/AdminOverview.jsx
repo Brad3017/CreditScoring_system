@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { ChartCard, BarList, Columns, Split, Empty } from "../../components/charts";
-import { card, muted, inputStyle } from "../../components/analystUi";
+import { card, muted, inputStyle, th, td } from "../../components/analystUi";
+import { getLesson } from "../../lib/lessons";
 import { getCurrentUser, fetchAdminOverview, downloadAssessmentsCsv } from "../../lib/api";
 
 function Kpi({ label, value, hint }) {
@@ -145,6 +146,30 @@ export default function AdminOverview() {
               </ChartCard>
             </>
           )}
+
+          <section style={card} aria-labelledby="guides-heading">
+            <h2 id="guides-heading" style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>Most-read guides</h2>
+            <p style={{ ...muted, margin: "var(--space-1) 0 var(--space-4)" }}>
+              Lessons opened by business owners, all time. Each owner counts at most once per guide per day.
+            </p>
+            {d.lesson_views?.length ? (
+              <div className="table-wrap">
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr><th style={th}>Guide</th><th style={{ ...th, textAlign: "right" }}>Views</th></tr></thead>
+                  <tbody>
+                    {d.lesson_views.map((r) => (
+                      <tr key={r.feature_key}>
+                        <td style={td}>{getLesson(r.feature_key)?.title || r.feature_key}</td>
+                        <td style={{ ...td, textAlign: "right" }} className="num">{r.views}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p style={{ margin: 0, color: "var(--ink-2)" }}>No guides have been opened yet.</p>
+            )}
+          </section>
 
           <section style={card}>
             <h2 style={{ margin: 0, fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>Accounts</h2>

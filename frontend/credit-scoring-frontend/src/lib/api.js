@@ -292,6 +292,19 @@ export async function simulateAssessment(payload, signal) {
   return body;
 }
 
+// Records that the owner opened a lesson. Best effort: a failure is ignored, the lesson still shows.
+export async function recordLessonView(featureKey) {
+  try {
+    await authFetch(`${BASE}/learn/viewed/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feature_key: featureKey }),
+    });
+  } catch {
+    // Not important enough to interrupt reading.
+  }
+}
+
 // decision: "approved" | "declined" | "referred"
 export async function reviewAssessment(pk, decision, note) {
   const res = await authFetch(`${BASE}/scoring/assessments/${pk}/review/`, {

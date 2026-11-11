@@ -2,12 +2,25 @@
 // Right of the centre line = pushed risk up (--risk-high); left = pushed risk down (--risk-low).
 // Every figure comes from assessment.shap_values; nothing is computed here except bar lengths.
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { th, td, muted } from "./analystUi";
+import { hasLesson } from "../lib/lessons";
+
+// Small "Learn why" link to the lesson for a factor (owner report only).
+function LearnWhy({ feature, label }) {
+  if (!hasLesson(feature)) return null;
+  return (
+    <Link to={`/learn/${feature}`} aria-label={`Learn why ${label} matters`}
+      style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>
+      Learn why
+    </Link>
+  );
+}
 
 const TOP = 8;
 const fmt = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
 
-export default function ShapChart({ values, legacyExplanation = [] }) {
+export default function ShapChart({ values, legacyExplanation = [], learnLinks = false }) {
   const [showAll, setShowAll] = useState(false);
   const [asTable, setAsTable] = useState(false);
 
@@ -30,6 +43,8 @@ export default function ShapChart({ values, legacyExplanation = [] }) {
   }
 
   const rows = showAll ? values : values.slice(0, TOP);
+  // Wider label column when a "Learn why" link sits next to the factor name.
+  const labelCol = learnLinks ? "minmax(120px, 300px) 1fr" : "minmax(110px, 200px) 1fr";
   const max = Math.max(...values.map((v) => Math.abs(v.value)), 1e-9);
   // Bars use at most 70% of each half so the value label always fits at the tip.
   const len = (v) => `${(Math.abs(v) / max) * 70}%`;
@@ -50,7 +65,10 @@ export default function ShapChart({ values, legacyExplanation = [] }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.feature}>
-                  <td style={td}>{r.label}</td>
+                  <td style={td}>
+                    {r.label}
+                    {learnLinks && <> <LearnWhy feature={r.feature} label={r.label} /></>}
+                  </td>
                   <td style={{ ...td, color: r.direction === "raises_risk" ? "var(--risk-high)" : "var(--risk-low)", fontWeight: 600 }}>
                     {r.direction === "raises_risk" ? "Raised risk" : "Lowered risk"}
                   </td>
@@ -62,7 +80,7 @@ export default function ShapChart({ values, legacyExplanation = [] }) {
         </div>
       ) : (
         <>
-          <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(110px, 200px) 1fr", gap: "var(--space-3)", ...muted, marginBottom: "var(--space-2)" }}>
+          <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: labelCol, gap: "var(--space-3)", ...muted, marginBottom: "var(--space-2)" }}>
             <span />
             <span style={{ display: "flex", justifyContent: "space-between" }}>
               <span>← Lowered risk</span><span>Raised risk →</span>
@@ -74,10 +92,18 @@ export default function ShapChart({ values, legacyExplanation = [] }) {
               const color = up ? "var(--risk-high)" : "var(--risk-low)";
               const text = `${r.label}: ${up ? "raised" : "lowered"} risk by ${Math.abs(r.value).toFixed(2)}`;
               return (
-                <li key={r.feature} aria-label={text} title={text}
-                  style={{ display: "grid", gridTemplateColumns: "minmax(110px, 200px) 1fr", gap: "var(--space-3)", alignItems: "center" }}>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
-                  <span style={{ display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "center", minHeight: 22 }}>
+                // The text equivalent sits in the label cell (sr-only), not in aria-label on the <li>,
+                // so the "Learn why" link inside stays reachable for screen readers.
+                <li key={r.feature} title={text}
+                  style={{ position: "relative", display: "grid", gridTemplateColumns: labelCol, gap: "var(--space-3)", alignItems: "center" }}>
+                  <span style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)", minWidth: 0 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.label}
+                      <span className="sr-only">: {up ? "raised" : "lowered"} risk by {Math.abs(r.value).toFixed(2)}</span>
+                    </span>
+                    {learnLinks && <LearnWhy feature={r.feature} label={r.label} />}
+                  </span>
+                  <span aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", alignItems: "center", minHeight: 22 }}>
                     <span style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6, borderRight: "1px solid var(--line-strong)", height: "100%" }}>
                       {!up && <>
                         <span className="num" style={{ fontSize: "var(--text-xs)", fontWeight: 600, color }}>{fmt(r.value)}</span>

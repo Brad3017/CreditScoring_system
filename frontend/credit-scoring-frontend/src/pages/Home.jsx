@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import LoadError from "../components/LoadError";
 import RiskScale, { riskKeyFromCategory } from "../components/RiskScale";
 import LegacyTag from "../components/LegacyTag";
 import { getCurrentUser, fetchMyAssessments } from "../lib/api";
+import { getLesson, topRaisingLessonKeys } from "../lib/lessons";
 
 // Formats money, or says plainly that it is missing. Never invents a value.
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -151,6 +152,8 @@ export default function Home() {
             )}
           </section>
 
+          {!loading && <RecommendedReading assessment={latest} />}
+
           <section className="panel" aria-labelledby="recent-heading">
             <div className="panel-head">
               <h2 id="recent-heading">Recent assessments</h2>
@@ -196,5 +199,34 @@ function Fact({ label, value }) {
       <dt style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{label}</dt>
       <dd className="num" style={{ margin: "var(--space-1) 0 0", fontWeight: 600, fontSize: "var(--text-lg)" }}>{value}</dd>
     </div>
+  );
+}
+
+// Lessons for the top two risk-raising factors of the latest assessment (stored SHAP values only).
+// Hidden when no factor with a lesson raised the risk.
+function RecommendedReading({ assessment }) {
+  const keys = topRaisingLessonKeys(assessment, 2);
+  if (!keys.length) return null;
+  return (
+    <section className="panel" aria-labelledby="reading-heading">
+      <div className="panel-head">
+        <h2 id="reading-heading">Recommended reading</h2>
+        <Link to="/learn" style={{ color: "var(--accent)", fontWeight: 600 }}>All guides</Link>
+      </div>
+      <p style={{ margin: "0 0 var(--space-4)", color: "var(--ink-2)" }}>
+        Based on the factors that raised your risk in your latest assessment.
+      </p>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: "var(--space-4)" }}>
+        {keys.map((key) => {
+          const lesson = getLesson(key);
+          return (
+            <li key={key} style={{ border: "1px solid var(--line-strong)", borderRadius: "var(--radius-lg)", padding: "var(--space-4)", minWidth: 0 }}>
+              <Link to={`/learn/${key}`} style={{ color: "var(--ink)", fontWeight: 600 }}>{lesson.title}</Link>
+              <p style={{ margin: "var(--space-1) 0 0", color: "var(--ink-2)", fontSize: "var(--text-sm)" }}>{lesson.summary}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
