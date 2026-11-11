@@ -8,6 +8,9 @@ import { useEffect } from "react";
 
 const DRAFT_KEY = "biasharascore_assessment_draft";
 
+// Business fields that live on the saved BusinessProfile and are prefilled from it.
+const PROFILE_FIELDS = ["business_name", "sector", "county", "location_type", "legal_status", "business_age_years", "employees_count"];
+
 const STEPS = [
   { id: 1, title: "Business" },
   { id: 2, title: "Finances" },
@@ -112,12 +115,22 @@ export default function NewAssessment() {
     getCurrentUser().then(setUser).catch(() => {});
     fetchBusinessProfile()
       .then((profile) => {
-        if (profile?.kra_pin) {
-          setForm((f) => ({ ...f, kra_pin: profile.kra_pin }));
-          setPinLocked(true);
-        }
+        if (!profile?.id) return; // No saved profile yet: the owner fills the business step.
+        // Prefill from the saved profile. A field the owner already changed (e.g. in a saved draft)
+        // is left alone; the server never overwrites saved profile fields from an assessment anyway.
+        setForm((f) => {
+          const next = { ...f };
+          for (const field of PROFILE_FIELDS) {
+            const saved = profile[field];
+            if (saved == null || saved === "") continue;
+            if (f[field] === "" || f[field] === INITIAL[field]) next[field] = String(saved);
+          }
+          if (profile.kra_pin) next.kra_pin = profile.kra_pin;
+          return next;
+        });
+        if (profile.kra_pin) setPinLocked(true);
       })
-      .catch(() => {}); // No profile yet: the owner types the PIN.
+      .catch(() => {}); // Not fatal: the form still works without a prefill.
   }, []);
 
   function update(e) {

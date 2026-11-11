@@ -1,5 +1,5 @@
 import { NavLink, Link, useNavigate } from "react-router-dom";
-import { clearSession } from "../lib/api";
+import { clearSession, getSessionUser } from "../lib/api";
 
 const links = [
   { to: "/home", label: "Overview" },
@@ -11,10 +11,13 @@ const links = [
 
 // Top-bar layout for borrower pages. Styles live in tokens.css (.app-*), because the
 // bar needs breakpoints: full-width header, 1440px inner grid, scrollable nav below 900px.
-export default function AppShell({ user, children }) {
+export default function AppShell({ user: userProp, children }) {
   const navigate = useNavigate();
-  const initials = user?.full_name
-    ? user.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+  // The user stored at login is always available, so the bar never waits on (or fails with) /auth/me/.
+  const user = userProp?.email ? { ...getSessionUser(), ...userProp } : getSessionUser();
+  const name = user?.full_name?.trim() || user?.email || "";
+  const initials = user?.full_name?.trim()
+    ? user.full_name.trim().split(/\s+/).map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : (user?.email || "").slice(0, 2).toUpperCase();
 
   function signOut() {
@@ -40,11 +43,15 @@ export default function AppShell({ user, children }) {
           </nav>
 
           <div className="app-user">
-            <span className="app-avatar" aria-hidden="true">{initials || "?"}</span>
-            <div className="app-user-text">
-              <div className="app-user-name">{user?.full_name || "Signed in"}</div>
-              {user?.email && <div className="app-user-email">{user.email}</div>}
-            </div>
+            {name && (
+              <>
+                <span className="app-avatar" aria-hidden="true">{initials}</span>
+                <div className="app-user-text">
+                  <div className="app-user-name">{name}</div>
+                  {user?.full_name?.trim() && <div className="app-user-email">{user.email}</div>}
+                </div>
+              </>
+            )}
             <span className="app-divider" aria-hidden="true" />
             <button type="button" className="btn btn-secondary" onClick={signOut}>
               Sign out

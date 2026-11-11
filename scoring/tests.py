@@ -490,3 +490,43 @@ class KraPinTests(TestCase):
         self.assertIsNone(pin("P051234567X"))                 # clashes with the earlier row once normalised
         self.assertEqual(pin("P111111111Q"), "P111111111Q")   # already valid, untouched
         self.assertEqual((normalised, nulled), (1, 3))
+
+
+class BusinessProfileRoundTripTests(TestCase):
+    """PUT then GET returns the same values; an assessment never overwrites saved profile fields."""
+    url = "/api/scoring/business-profile/"
+    SAVED = {
+        "business_name": "Kamau Hardware", "kra_pin": "P051234567X", "sector": "Services", "county": "Kisumu",
+        "location_type": "Rural", "legal_status": "Partnership", "business_age_years": 7, "employees_count": 12,
+    }
+
+    def setUp(self):
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="rt", email="rt@test.ke", password="x", role="owner")
+        self.client.force_authenticate(self.owner)
+
+    def test_put_then_get_returns_same_values(self):
+        put = self.client.put(self.url, self.SAVED, format="json")
+        self.assertEqual(put.status_code, 200, put.content)
+        got = self.client.get(self.url).json()
+        for field, value in self.SAVED.items():
+            self.assertEqual(got[field], value, field)
+
+    def test_assessment_keeps_saved_profile_fields(self):
+        self.client.put(self.url, self.SAVED, format="json")
+        # LOW_RISK differs in every profile field (name, sector, county, location, legal status, size).
+        res = self.client.post("/api/scoring/assess/", {**LOW_RISK, "kra_pin": "P999999999Z"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        got = self.client.get(self.url).json()
+        for field, value in self.SAVED.items():
+            self.assertEqual(got[field], value, field)
+
+    def test_assessment_fills_only_empty_fields(self):
+        from .models import BusinessProfile
+        self.client.put(self.url, self.SAVED, format="json")
+        BusinessProfile.objects.filter(user=self.owner).update(business_name="", kra_pin=None)
+        self.client.post("/api/scoring/assess/", {**LOW_RISK, "kra_pin": "P999999999Z"}, format="json")
+        got = self.client.get(self.url).json()
+        self.assertEqual(got["business_name"], LOW_RISK["business_name"])  # was empty -> filled
+        self.assertEqual(got["kra_pin"], "P999999999Z")                     # was empty -> filled
+        self.assertEqual(got["sector"], "Services")                        # saved -> kept

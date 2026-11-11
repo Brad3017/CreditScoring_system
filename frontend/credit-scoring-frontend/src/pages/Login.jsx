@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { login, saveSession } from "../lib/api";
+import { login, saveSession, takeSessionExpiredMessage } from "../lib/api";
 import AuthShell, { Field, PasswordField, ErrorNote } from "../components/AuthShell";
 
 export default function Login() {
@@ -8,6 +8,8 @@ export default function Login() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Set by api.js when a token refresh is refused; shown once.
+  const [expired] = useState(() => takeSessionExpiredMessage());
 
   function change(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -42,6 +44,11 @@ export default function Login() {
   return (
     <AuthShell title="Welcome back" subtitle="Log in to see your assessments and credit score.">
       <form onSubmit={submit} noValidate={false}>
+        {expired && !error && (
+          <p role="status" style={{ margin: "0 0 var(--space-4)", padding: "var(--space-3) var(--space-4)", borderRadius: "var(--radius)", background: "var(--accent-soft)", color: "var(--ink)", fontSize: "var(--text-sm)" }}>
+            {expired}
+          </p>
+        )}
         <ErrorNote>{error}</ErrorNote>
 
         <Field

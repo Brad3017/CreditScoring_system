@@ -30,7 +30,7 @@ const css = `
 }
 `;
 
-export default function Sidebar({ title, subtitle, user, actions, children, nav, extras, roleLabel, brandNote }) {
+export default function Sidebar({ title, subtitle, user, actions, children, nav, extras, roleLabel, brandNote, notice }) {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -104,6 +104,11 @@ export default function Sidebar({ title, subtitle, user, actions, children, nav,
           <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>{actions}</div>
         </header>
         <main style={{ padding: "var(--space-8)", maxWidth: 1240, margin: "0 auto", display: "grid", gap: "var(--space-6)", boxSizing: "border-box" }}>
+          {notice && (
+            <p role="note" style={{ margin: 0, padding: "var(--space-3) var(--space-4)", border: "1px solid var(--line-strong)", borderRadius: "var(--radius)", background: "var(--accent-soft)", color: "var(--ink)", fontSize: "var(--text-sm)" }}>
+              {notice}
+            </p>
+          )}
           {children}
         </main>
       </div>

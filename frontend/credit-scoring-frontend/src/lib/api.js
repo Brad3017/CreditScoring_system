@@ -1,5 +1,89 @@
 export const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
 
+// ---------------------------------------------------------------------------
+// Authenticated requests with transparent token refresh.
+// On a 401: POST /auth/refresh/ ONCE (shared by all requests that fail at the same time),
+// store the new tokens, retry the original request. Only if the refresh itself is refused is
+// the session cleared and the user sent to /login with SESSION_EXPIRED_MESSAGE.
+// ---------------------------------------------------------------------------
+export const SESSION_EXPIRED_MESSAGE = "Your session expired. Sign in again.";
+const SESSION_EXPIRED_KEY = "session_expired_message";
+const NETWORK_MESSAGE = "We could not reach the server. Check your connection and try again.";
+
+let refreshing = null; // the in-flight refresh, so parallel 401s trigger one refresh call
+
+function refreshAccess() {
+  const refresh = localStorage.getItem("refresh");
+  if (!refresh) return Promise.resolve("rejected");
+  if (!refreshing) {
+    refreshing = fetch(`${BASE}/auth/refresh/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return "rejected";
+        const body = await res.json();
+        if (!body.access) return "rejected";
+        localStorage.setItem("access", body.access);
+        // ROTATE_REFRESH_TOKENS is on: the server sends a new refresh token too.
+        if (body.refresh) localStorage.setItem("refresh", body.refresh);
+        return "ok";
+      })
+      .catch(() => "network")
+      .finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing;
+}
+
+function expireSession() {
+  clearSession();
+  try {
+    sessionStorage.setItem(SESSION_EXPIRED_KEY, SESSION_EXPIRED_MESSAGE);
+  } catch {
+    // Storage unavailable: the login page simply shows no message.
+  }
+  if (window.location.pathname !== "/login") window.location.assign("/login");
+}
+
+// Read once by the login page.
+export function takeSessionExpiredMessage() {
+  try {
+    const msg = sessionStorage.getItem(SESSION_EXPIRED_KEY);
+    sessionStorage.removeItem(SESSION_EXPIRED_KEY);
+    return msg || "";
+  } catch {
+    return "";
+  }
+}
+
+async function authFetch(url, options = {}) {
+  // The token is read on every attempt, so the retry carries the refreshed one.
+  const send = () =>
+    fetch(url, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${getToken()}` } });
+  let res;
+  try {
+    res = await send();
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    throw new Error(NETWORK_MESSAGE);
+  }
+  if (res.status !== 401) return res;
+
+  const outcome = await refreshAccess();
+  if (outcome === "ok") {
+    res = await send();
+    if (res.status !== 401) return res;
+  }
+  if (outcome === "network") throw new Error(NETWORK_MESSAGE);
+  expireSession();
+  const err = new Error(SESSION_EXPIRED_MESSAGE);
+  err.sessionExpired = true;
+  throw err;
+}
+
 export async function signup(data) {
   const res = await fetch(`${BASE}/auth/signup/`, {
     method: "POST",
@@ -23,26 +107,19 @@ export async function login(data) {
 }
 
 export async function fetchMyAssessments() {
-  const token = getToken();
-  const res = await fetch(`${BASE}/scoring/assessments/`, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await authFetch(`${BASE}/scoring/assessments/`, {
+    headers: { "Content-Type": "application/json" },
   });
-  if (!res.ok) return [];
+  // A failed request must surface as an error, never as "no assessments".
+  if (!res.ok) throw new Error(await readError(res, "Your assessments could not be loaded."));
   return res.json();
 }
 
 export async function submitAssessment(payload) {
-  const token = getToken();
   // Ensure this path matches your working Django endpoint!
-  const res = await fetch(`${BASE}/scoring/assess/`, {
+  const res = await authFetch(`${BASE}/scoring/assess/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
@@ -121,21 +198,18 @@ export function getToken() {
 }
 
 export async function fetchMe() {
-  const res = await fetch(`${BASE}/auth/me/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await authFetch(`${BASE}/auth/me/`, {
+    headers: {},
   });
-  if (!res.ok) throw new Error("Unauthorized");
+  if (!res.ok) throw new Error(await readError(res, "Your account details could not be loaded."));
   const me = await res.json();
   storeUser(me);
   return me;
 }
 
 export async function fetchAllAssessments() {
-  const res = await fetch(`${BASE}/scoring/assessments/all/`, {
-    headers: { 
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}` 
-    },
+  const res = await authFetch(`${BASE}/scoring/assessments/all/`, {
+    headers: { "Content-Type": "application/json" },
   });
   if (!res.ok) throw new Error("Failed to load analyst assessments");
   return res.json();
@@ -144,21 +218,21 @@ export async function fetchAllAssessments() {
 
 
 export async function updateMe(data) {
-  const res = await fetch(`${BASE}/auth/me/`, {
+  const res = await authFetch(`${BASE}/auth/me/`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || "Your personal details could not be saved.");
+  if (!res.ok) throw fieldError(body, "Your personal details could not be saved.");
   storeUser(body);
   return body;
 }
 
 export async function saveBusinessProfile(data) {
-  const res = await fetch(`${BASE}/scoring/business-profile/`, {
+  const res = await authFetch(`${BASE}/scoring/business-profile/`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   const body = await res.json().catch(() => ({}));
@@ -168,8 +242,8 @@ export async function saveBusinessProfile(data) {
 
 // The signed-in owner's saved business profile, or {} if there is none yet.
 export async function fetchBusinessProfile() {
-  const res = await fetch(`${BASE}/scoring/business-profile/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await authFetch(`${BASE}/scoring/business-profile/`, {
+    headers: {},
   });
   if (!res.ok) throw new Error(await readError(res, "Your business profile could not be loaded."));
   return res.json();
@@ -185,8 +259,8 @@ async function readError(res, fallback) {
 }
 
 export async function fetchAssessmentDetail(pk) {
-  const res = await fetch(`${BASE}/scoring/assessments/${pk}/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await authFetch(`${BASE}/scoring/assessments/${pk}/`, {
+    headers: {},
   });
   if (!res.ok) throw new Error(await readError(res, "Failed to load assessment"));
   return res.json();
@@ -194,8 +268,8 @@ export async function fetchAssessmentDetail(pk) {
 
 // The stored answers behind one of the signed-in owner's own assessments.
 export async function fetchAssessmentInputs(pk) {
-  const res = await fetch(`${BASE}/scoring/assessments/${pk}/inputs/`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await authFetch(`${BASE}/scoring/assessments/${pk}/inputs/`, {
+    headers: {},
   });
   if (!res.ok) throw new Error(await readError(res, "Your original answers could not be loaded."));
   return res.json();
@@ -203,9 +277,9 @@ export async function fetchAssessmentInputs(pk) {
 
 // What-if scoring. Saves nothing on the server. Pass an AbortSignal to cancel a stale request.
 export async function simulateAssessment(payload, signal) {
-  const res = await fetch(`${BASE}/scoring/simulate/`, {
+  const res = await authFetch(`${BASE}/scoring/simulate/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     signal,
   });
@@ -220,12 +294,9 @@ export async function simulateAssessment(payload, signal) {
 
 // decision: "approved" | "declined" | "referred"
 export async function reviewAssessment(pk, decision, note) {
-  const res = await fetch(`${BASE}/scoring/assessments/${pk}/review/`, {
+  const res = await authFetch(`${BASE}/scoring/assessments/${pk}/review/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision, note }),
   });
   if (!res.ok) throw new Error(await readError(res, "Could not save the review"));
@@ -236,8 +307,8 @@ async function adminGet(path, params = {}) {
   const q = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v)
   ).toString();
-  const res = await fetch(`${BASE}${path}${q ? `?${q}` : ""}`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await authFetch(`${BASE}${path}${q ? `?${q}` : ""}`, {
+    headers: {},
   });
   if (!res.ok) {
     let msg = "Request failed";
@@ -253,9 +324,9 @@ export const fetchAdminModel = () => adminGet("/scoring/admin/model/");
 export const fetchAdminUsers = () => adminGet("/auth/admin/users/");
 
 export async function updateAdminUser(id, changes) {
-  const res = await fetch(`${BASE}/auth/admin/users/${id}/`, {
+  const res = await authFetch(`${BASE}/auth/admin/users/${id}/`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),
   });
   const body = await res.json().catch(() => ({}));
@@ -265,8 +336,8 @@ export async function updateAdminUser(id, changes) {
 
 export async function downloadAssessmentsCsv(params = {}) {
   const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
-  const res = await fetch(`${BASE}/scoring/admin/export/${q ? `?${q}` : ""}`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+  const res = await authFetch(`${BASE}/scoring/admin/export/${q ? `?${q}` : ""}`, {
+    headers: {},
   });
   if (!res.ok) throw new Error("Export failed");
   const url = URL.createObjectURL(await res.blob());

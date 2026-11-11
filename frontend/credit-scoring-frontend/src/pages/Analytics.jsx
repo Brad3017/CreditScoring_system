@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
+import LoadError from "../components/LoadError";
 import StatusPill from "../components/StatusPill";
 import { Columns } from "../components/charts";
 import { riskKeyFromCategory } from "../components/RiskScale";
@@ -87,6 +88,7 @@ export default function Analytics() {
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0); // bumped by Retry to re-run the load
 
   useEffect(() => {
     let cancelled = false;
@@ -97,13 +99,19 @@ export default function Analytics() {
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
       } catch {
-        if (!cancelled) setError("We could not load your analytics. Refresh the page to try again.");
+        if (!cancelled) setError("We could not load your analytics.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [attempt]);
+
+  function retry() {
+    setError("");
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  }
 
   const chrono = useMemo(() => [...assessments].reverse(), [assessments]);
   const latest = assessments[0] || null;
@@ -138,7 +146,7 @@ export default function Analytics() {
           <p>How your score has moved, and what keeps shaping it.</p>
         </header>
 
-        {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
+        <LoadError message={error} onRetry={retry} busy={loading} />
         {loading && (
           <section className="panel" aria-busy="true">
             <h2 className="panel-title">Your credit picture</h2>

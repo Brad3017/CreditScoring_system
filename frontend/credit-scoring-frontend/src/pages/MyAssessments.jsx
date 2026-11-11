@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
+import LoadError from "../components/LoadError";
 import { riskKeyFromCategory } from "../components/RiskScale";
 import LegacyTag from "../components/LegacyTag";
 import StatusPill from "../components/StatusPill";
@@ -17,6 +18,7 @@ export default function MyAssessments() {
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0); // bumped by Retry to re-run the load
   const [query, setQuery] = useState("");
   const [risk, setRisk] = useState("all");
 
@@ -29,7 +31,7 @@ export default function MyAssessments() {
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
       } catch {
-        if (!cancelled) setError("We could not load your assessments. Refresh the page to try again.");
+        if (!cancelled) setError("We could not load your assessments.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -38,7 +40,13 @@ export default function MyAssessments() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  function retry() {
+    setError("");
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  }
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,10 +84,10 @@ export default function MyAssessments() {
     <AppShell user={user}>
       <header className="page-head">
         <h1>My assessments</h1>
-        <p>{loading ? "Loading…" : `${assessments.length} ${assessments.length === 1 ? "assessment" : "assessments"} on record`}</p>
+        <p>{loading ? "Loading…" : error ? "Your history could not be loaded." : `${assessments.length} ${assessments.length === 1 ? "assessment" : "assessments"} on record`}</p>
       </header>
 
-      {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
+      <LoadError message={error} onRetry={retry} busy={loading} />
 
       <section className="panel" aria-labelledby="history-heading">
         <div className="panel-head">

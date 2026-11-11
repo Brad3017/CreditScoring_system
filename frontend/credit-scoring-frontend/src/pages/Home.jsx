@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
+import LoadError from "../components/LoadError";
 import RiskScale, { riskKeyFromCategory } from "../components/RiskScale";
 import LegacyTag from "../components/LegacyTag";
 import { getCurrentUser, fetchMyAssessments } from "../lib/api";
@@ -30,6 +31,7 @@ export default function Home() {
   const [user, setUser] = useState(null);
   const [assessments, setAssessments] = useState([]);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0); // bumped by Retry to re-run the load
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +42,7 @@ export default function Home() {
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
       } catch {
-        if (!cancelled) setError("We could not load your assessments. Refresh the page to try again.");
+        if (!cancelled) setError("We could not load your assessments.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -49,7 +51,13 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  function retry() {
+    setError("");
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  }
 
   const latest = assessments[0] || null;
   const riskKey = riskKeyFromCategory(latest?.risk_category);
@@ -69,7 +77,7 @@ export default function Home() {
         </p>
       </header>
 
-      {error && <p role="alert" style={{ color: "var(--risk-high)", margin: 0 }}>{error}</p>}
+      <LoadError message={error} onRetry={retry} busy={loading} />
 
       {!loading && !latest && !error ? (
         <section className="panel" aria-labelledby="start-heading">

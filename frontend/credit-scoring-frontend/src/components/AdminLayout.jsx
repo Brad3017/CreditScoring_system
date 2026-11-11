@@ -1,5 +1,6 @@
 import { LayoutDashboard, Cpu, Scale, Users, ClipboardList, Database } from "lucide-react";
 import Sidebar from "./Sidebar";
+import { layoutUser, roleOf, roleLabel } from "../lib/roles";
 
 const NAV = {
   root: "/console",
@@ -17,5 +18,6 @@ const EXTRAS = [
 ];
 
 export default function AdminLayout(props) {
-  return <Sidebar {...props} nav={NAV} extras={EXTRAS} roleLabel="Administrator" brandNote="Administration" />;
+  const user = layoutUser(props.user);
+  return <Sidebar {...props} user={user} nav={NAV} extras={EXTRAS} roleLabel={roleLabel(roleOf(user))} brandNote="Administration" />;
 }

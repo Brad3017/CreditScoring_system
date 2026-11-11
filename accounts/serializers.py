@@ -1,8 +1,31 @@
-from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth.models import update_last_login
+from django.core.validators import RegexValidator
+from rest_framework import serializers
+from rest_framework.fields import empty
+from rest_framework.validators import UniqueValidator
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from .models import (
+    PHONE_PATTERN, PHONE_MESSAGE, NATIONAL_ID_DUPLICATE_MESSAGE, blank_to_none, normalise_phone,
+)
+
 User = get_user_model()
+
+
+class NormalisedCharField(serializers.CharField):
+    """Cleans the input BEFORE validation (so validators see the stored form). Blank becomes None."""
+
+    def __init__(self, normalise=blank_to_none, **kwargs):
+        self.normalise = normalise
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("allow_null", True)
+        super().__init__(**kwargs)
+
+    def run_validation(self, data=empty):
+        if data is not empty:
+            data = self.normalise(data)
+        return super().run_validation(data)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Adds `role` and user info to the JWT login response."""
@@ -43,6 +66,14 @@ class SignupSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    national_id = NormalisedCharField(
+        max_length=20,
+        validators=[UniqueValidator(queryset=User.objects.all(), message=NATIONAL_ID_DUPLICATE_MESSAGE)],
+    )
+    # No max_length check: the format check already fixes the length.
+    phone = NormalisedCharField(normalise=normalise_phone, validators=[RegexValidator(PHONE_PATTERN, PHONE_MESSAGE)])
+    county = NormalisedCharField(max_length=50)
+
     class Meta:
         model = User
         fields = [
@@ -85,6 +116,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError({"detail": "Invalid credentials or account inactive."})
 
         refresh = self.get_token(user)
+        update_last_login(None, user)  # simplejwt does not do this for a custom validate()
 
         return {
             "refresh": str(refresh),

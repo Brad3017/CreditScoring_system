@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -5,6 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from .models import NATIONAL_ID_DUPLICATE_MESSAGE
 from .serializers import SignupSerializer, UserSerializer, CustomTokenObtainPairSerializer
 
 
@@ -39,9 +41,15 @@ class MeView(APIView):
         return Response(UserSerializer(request.user).data)
 
     def patch(self, request):
+        # email, role and status are read-only in UserSerializer and silently ignored here.
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        try:
+            with transaction.atomic():
+                serializer.save()
+        except IntegrityError:
+            # Same national ID saved by another account between validation and this write.
+            return Response({"national_id": [NATIONAL_ID_DUPLICATE_MESSAGE]}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.data)
 
 

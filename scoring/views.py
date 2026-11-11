@@ -49,6 +49,25 @@ def _pin_taken(pin, exclude_pk=None):
 
 DUPLICATE_PIN_ERROR = {"kra_pin": [KRA_PIN_DUPLICATE_MESSAGE]}
 
+# Profile fields an assessment may fill in. It only ever fills EMPTY ones; saved values are kept.
+PROFILE_FIELDS_FROM_REQUEST = (
+    "business_name", "sector", "county", "location_type", "legal_status",
+    "business_age_years", "employees_count",
+)
+
+
+def _fill_empty_profile_fields(profile, credit_req, pin):
+    filled = []
+    for field in PROFILE_FIELDS_FROM_REQUEST:
+        new = getattr(credit_req, field)
+        if getattr(profile, field) in (None, "") and new not in (None, ""):
+            setattr(profile, field, new)
+            filled.append(field)
+    if pin and not profile.kra_pin:
+        profile.kra_pin = pin
+        filled.append("kra_pin")
+    return filled
+
 
 def _reviewer_name(a):
     if not a.reviewed_by:
@@ -189,6 +208,7 @@ class SubmitCreditAssessmentView(APIView):
         pin = pin_serializer.validated_data.get("kra_pin")
 
         # The form's PIN is only used when the profile has none yet; an existing PIN is never overwritten.
+        # The same goes for every other profile field (see _fill_empty_profile_fields).
         profile = _current_profile(request.user)
         set_pin = pin is not None and (profile is None or not profile.kra_pin)
         if set_pin and _pin_taken(pin, exclude_pk=profile.pk if profile else None):
@@ -221,9 +241,10 @@ class SubmitCreditAssessmentView(APIView):
                         business_age_years=credit_req.business_age_years,
                         employees_count=credit_req.employees_count,
                     )
-                elif set_pin:
-                    business_profile.kra_pin = pin
-                    business_profile.save(update_fields=["kra_pin"])
+                else:
+                    filled = _fill_empty_profile_fields(business_profile, credit_req, pin if set_pin else None)
+                    if filled:
+                        business_profile.save(update_fields=filled)
                 credit_req.business = business_profile
                 credit_req.save(update_fields=["business"])
 
