@@ -1,0 +1,4 @@
+# Test-only tools, on top of the app requirements.
+# Install with: pip install -r requirements-dev.txt
+-r requirements.txt
+pypdf==6.21.4

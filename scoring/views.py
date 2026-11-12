@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
@@ -6,13 +7,17 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import UserRateThrottle
 
-from .models import CreditRequest, CreditAssessment, BusinessProfile, LessonView, KRA_PIN_DUPLICATE_MESSAGE
+from .models import (
+    CreditRequest, CreditAssessment, BusinessProfile, LessonView, LetterDownload,
+)
+from .letters import build_decision_letter, letter_reference, DECIDED
 from .serializers import (
     CreditRequestSerializer,
     CreditAssessmentSerializer,
     BusinessProfileSerializer,
-    KraPinSerializer,
+    AssessmentBusinessSerializer,
     MODEL_INPUT_FIELDS,
+    pin_taken_message,
 )
 from .services import (
     evaluate_credit_request, label_matches_score, limit_explanation, MODEL_VERSION, FEATURES, LIMIT_INPUTS,
@@ -37,38 +42,56 @@ class IsOwner(IsAuthenticated):
         return request.user.role == "owner"
 
 
-def _current_profile(user):
-    """The business profile shown on the profile page: the user's most recent one."""
-    return BusinessProfile.objects.filter(user=user).order_by("-created_at").first()
+# Business fields copied from the request when an assessment creates a NEW business.
+NEW_BUSINESS_FIELDS = ("sector", "county", "location_type", "legal_status", "business_age_years", "employees_count")
+
+BUSINESS_NOT_FOUND = {"detail": "Business not found."}
 
 
-def _pin_taken(pin, exclude_pk=None):
-    qs = BusinessProfile.objects.filter(kra_pin=pin)
-    if exclude_pk is not None:
-        qs = qs.exclude(pk=exclude_pk)
-    return qs.exists()
+class _Reject(Exception):
+    """Ends the submit transaction with an error response; nothing is saved."""
+
+    def __init__(self, body, code):
+        super().__init__(body)
+        self.response = Response(body, status=code)
 
 
-DUPLICATE_PIN_ERROR = {"kra_pin": [KRA_PIN_DUPLICATE_MESSAGE]}
-
-# Profile fields an assessment may fill in. It only ever fills EMPTY ones; saved values are kept.
-PROFILE_FIELDS_FROM_REQUEST = (
-    "business_name", "sector", "county", "location_type", "legal_status",
-    "business_age_years", "employees_count",
-)
+def _same_name(a, b):
+    return " ".join((a or "").split()).casefold() == " ".join((b or "").split()).casefold()
 
 
-def _fill_empty_profile_fields(profile, credit_req, pin):
-    filled = []
-    for field in PROFILE_FIELDS_FROM_REQUEST:
-        new = getattr(credit_req, field)
-        if getattr(profile, field) in (None, "") and new not in (None, ""):
-            setattr(profile, field, new)
-            filled.append(field)
-    if pin and not profile.kra_pin:
-        profile.kra_pin = pin
-        filled.append("kra_pin")
-    return filled
+def _business_for_submit(user, chosen, validated_request):
+    """The BusinessProfile an assessment is linked to. Runs inside the submit transaction.
+    chosen: AssessmentBusinessSerializer.validated_data. Never falls back to any "latest" profile."""
+    pin = chosen.get("kra_pin")
+    name = (chosen.get("business_name") or "").strip()
+
+    if chosen.get("business_id") is not None:
+        # An existing business: it must be one of THIS owner's (404 otherwise, so other IDs stay hidden).
+        profile = BusinessProfile.objects.select_for_update().filter(pk=chosen["business_id"], user=user).first()
+        if profile is None:
+            raise _Reject(BUSINESS_NOT_FOUND, status.HTTP_404_NOT_FOUND)
+        # Its saved name and PIN are what the assessment is for; a different one in the payload is refused.
+        if pin and pin != profile.kra_pin:
+            raise _Reject({"kra_pin": [
+                f"This KRA PIN does not belong to '{profile.business_name}'. "
+                "To assess a different business, choose Add a new business."
+            ]}, status.HTTP_400_BAD_REQUEST)
+        if name and not _same_name(name, profile.business_name):
+            raise _Reject({"business_name": [
+                f"This assessment is for '{profile.business_name}'. "
+                "To assess a different business, choose Add a new business."
+            ]}, status.HTTP_400_BAD_REQUEST)
+        return profile
+
+    # A new business: its PIN must not be registered to ANY business yet.
+    message = pin_taken_message(pin, user)
+    if message:
+        raise _Reject({"kra_pin": [message]}, status.HTTP_400_BAD_REQUEST)
+    return BusinessProfile.objects.create(
+        user=user, business_name=name, kra_pin=pin,
+        **{f: validated_request[f] for f in NEW_BUSINESS_FIELDS},
+    )
 
 
 def _reviewer_name(a):
@@ -95,6 +118,8 @@ def _payload(a, detailed=False):
         "pk": a.id,
         "id": f"ASSESS-{a.id}",
         "business_name": r.business_name,
+        # The business this assessment is linked to (null only on old, unlinked rows).
+        "business_id": r.business_id,
         "sector": r.sector,
         "county": r.county,
         "monthly_revenue": float(r.monthly_revenue_kes),
@@ -146,6 +171,8 @@ def _payload(a, detailed=False):
             "business_age_years": r.business_age_years,
             "employees_count": r.employees_count,
         }
+        # Downloads of the decision letter (inline previews are not counted).
+        data["letter_downloads"] = a.letter_downloads.count()
     return data
 
 
@@ -215,22 +242,16 @@ class SubmitCreditAssessmentView(APIView):
 
     def post(self, request):
         serializer = CreditRequestSerializer(data=request.data)
-        # The PIN belongs to the business profile, not the credit request, so it is checked separately.
-        pin_serializer = KraPinSerializer(data={"kra_pin": request.data.get("kra_pin")})
-        request_ok, pin_ok = serializer.is_valid(), pin_serializer.is_valid()
-        if not (request_ok and pin_ok):
-            errors = {**(serializer.errors if not request_ok else {}), **(pin_serializer.errors if not pin_ok else {})}
+        # Which business: the PIN and the business choice belong to the BusinessProfile, not the request.
+        business_serializer = AssessmentBusinessSerializer(data={
+            k: request.data.get(k) for k in ("business_id", "business_name", "kra_pin")
+        })
+        request_ok, business_ok = serializer.is_valid(), business_serializer.is_valid()
+        if not (request_ok and business_ok):
+            errors = {**(serializer.errors if not request_ok else {}), **(business_serializer.errors if not business_ok else {})}
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
-        pin = pin_serializer.validated_data.get("kra_pin")
 
-        # The form's PIN is only used when the profile has none yet; an existing PIN is never overwritten.
-        # The same goes for every other profile field (see _fill_empty_profile_fields).
-        profile = _current_profile(request.user)
-        set_pin = pin is not None and (profile is None or not profile.kra_pin)
-        if set_pin and _pin_taken(pin, exclude_pk=profile.pk if profile else None):
-            return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
-
-        # Score first, so a rejected input leaves nothing half-saved.
+        # Score first (no database writes), so a rejected input leaves nothing half-saved.
         try:
             results = evaluate_credit_request(CreditRequest(**serializer.validated_data))
         except ValueError as e:
@@ -241,28 +262,12 @@ class SubmitCreditAssessmentView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        chosen = business_serializer.validated_data
         try:
             with transaction.atomic():
-                credit_req = serializer.save(user=request.user)
-                business_profile = profile
-                if business_profile is None:
-                    business_profile = BusinessProfile.objects.create(
-                        user=request.user,
-                        business_name=credit_req.business_name or "My Business",
-                        kra_pin=pin,
-                        sector=credit_req.sector,
-                        county=credit_req.county,
-                        location_type=credit_req.location_type,
-                        legal_status=credit_req.legal_status,
-                        business_age_years=credit_req.business_age_years,
-                        employees_count=credit_req.employees_count,
-                    )
-                else:
-                    filled = _fill_empty_profile_fields(business_profile, credit_req, pin if set_pin else None)
-                    if filled:
-                        business_profile.save(update_fields=filled)
-                credit_req.business = business_profile
-                credit_req.save(update_fields=["business"])
+                business = _business_for_submit(request.user, chosen, serializer.validated_data)
+                # Linked to the chosen (or just created) business, and named exactly as it is.
+                credit_req = serializer.save(user=request.user, business=business, business_name=business.business_name)
 
                 assessment = CreditAssessment.objects.create(
                     request=credit_req,
@@ -275,9 +280,13 @@ class SubmitCreditAssessmentView(APIView):
                     shap_values=results["shap_values"],
                     model_version=results["model_version"],
                 )
+        except _Reject as rejected:
+            return rejected.response
         except IntegrityError:
             # Another business registered the same PIN between the check above and this save.
-            return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
+            message = pin_taken_message(chosen.get("kra_pin"), request.user)
+            return Response({"kra_pin": [message or "This KRA PIN is already registered to another business."]},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         body = _payload(assessment)
         # Not stored: only meaningful at the moment of scoring.
@@ -348,6 +357,7 @@ class AssessmentInputsView(APIView):
             # Decimals as plain numbers, so the payload can be posted straight back to simulate/.
             body[field] = float(value) if field in ("loan_amount", "monthly_revenue_kes", "monthly_profit_kes") else value
         body["business_name"] = r.business_name
+        body["business_id"] = r.business_id
         body["county"] = r.county
         return Response(body)
 
@@ -362,27 +372,87 @@ class AllAssessmentsAnalystView(APIView):
         return Response([_payload(a) for a in qs], status=status.HTTP_200_OK)
 
 
-# ---- BusinessProfileView here unchanged ----
+LETTER_PENDING_MESSAGE = "A decision letter is available once a credit analyst has reviewed this application."
 
-class BusinessProfileView(APIView):
+
+class DecisionLetterView(APIView):
+    """GET /api/scoring/assessments/<pk>/letter/: the one-page PDF decision letter.
+    Owners: their own assessments only (anyone else's is 404, so IDs are not revealed).
+    Analysts and admins: any assessment; ?inline=1 opens it in the browser instead of downloading.
+    Always built from the latest stored decision. Each download (not an inline preview) is logged."""
+    permission_classes = [IsOwnerOrStaff]
+
+    def get(self, request, pk):
+        qs = CreditAssessment.objects.select_related("request", "request__user", "request__business", "reviewed_by")
+        if request.user.role == "owner":
+            qs = qs.filter(request__user=request.user)
+        a = qs.filter(pk=pk).first()
+        if a is None:
+            return Response({"detail": "Not found"}, status=404)
+        if a.review_status not in DECIDED or a.reviewed_at is None:
+            return Response({"detail": LETTER_PENDING_MESSAGE}, status=status.HTTP_409_CONFLICT)
+
+        pdf = build_decision_letter(a)
+        inline = request.query_params.get("inline") == "1" and request.user.role in ("analyst", "admin")
+        if not inline:
+            LetterDownload.objects.create(assessment=a, user=request.user)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        filename = f"BiasharaScore_decision_{letter_reference(a)}.pdf"
+        response["Content-Disposition"] = f'{"inline" if inline else "attachment"}; filename="{filename}"'
+        response["Cache-Control"] = "no-store"  # a later decision must never be served from a cache
+        return response
+
+
+class BusinessListView(APIView):
+    """GET: the signed-in owner's businesses, oldest first. POST: add a business."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        profile = _current_profile(request.user)
-        return Response(BusinessProfileSerializer(profile).data if profile else {})
+        qs = BusinessProfile.objects.filter(user=request.user).order_by("created_at", "id")
+        return Response(BusinessProfileSerializer(qs, many=True, context={"request": request}).data)
 
-    def put(self, request):
-        profile = _current_profile(request.user)
-        serializer = BusinessProfileSerializer(profile, data=request.data, partial=True) if profile \
-            else BusinessProfileSerializer(data=request.data)
+    def post(self, request):
+        serializer = BusinessProfileSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         try:
             with transaction.atomic():
                 serializer.save(user=request.user)
         except IntegrityError:
             # Same PIN saved by another business between validation and this write.
-            return Response(DUPLICATE_PIN_ERROR, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"kra_pin": ["This KRA PIN is already registered to another business."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class BusinessDetailView(APIView):
+    """GET / PATCH / PUT one of the signed-in owner's businesses (404 for anyone else's).
+    The KRA PIN can be changed only while the business has no assessments."""
+    permission_classes = [IsAuthenticated]
+
+    def _get(self, request, pk):
+        return BusinessProfile.objects.filter(pk=pk, user=request.user).first()
+
+    def get(self, request, pk):
+        profile = self._get(request, pk)
+        if profile is None:
+            return Response(BUSINESS_NOT_FOUND, status=404)
+        return Response(BusinessProfileSerializer(profile, context={"request": request}).data)
+
+    def patch(self, request, pk):
+        profile = self._get(request, pk)
+        if profile is None:
+            return Response(BUSINESS_NOT_FOUND, status=404)
+        serializer = BusinessProfileSerializer(profile, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                serializer.save()
+        except IntegrityError:
+            return Response({"kra_pin": ["This KRA PIN is already registered to another business."]},
+                            status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.data)
+
+    put = patch
 
 
 

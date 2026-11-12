@@ -1,20 +1,26 @@
 """
 Tests for the xgb_msme_v3 scoring service, the request serializer and the submit endpoint.
-Run with: python manage.py test scoring
+Run with: python manage.py test scoring  (needs the test tools: pip install -r requirements-dev.txt)
 """
 import json
+import re
+from io import BytesIO
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth import get_user_model
 from django.test import TestCase, SimpleTestCase
+from django.utils import timezone
+from pypdf import PdfReader  # test-only: requirements-dev.txt
 from rest_framework.test import APIClient
 
-from . import services
-from .models import CreditAssessment, CreditRequest
+from . import letters, services
+from .models import BusinessProfile, CreditAssessment, CreditRequest, LetterDownload
 from .serializers import CreditRequestSerializer
+from .views import LETTER_PENDING_MESSAGE
 
 User = get_user_model()
 
@@ -446,8 +452,8 @@ class SimulateEndpointTests(TestCase):
 
 
 class KraPinTests(TestCase):
-    """KRA PIN format (P + 9 digits + letter), normalisation, uniqueness and saving from an assessment."""
-    profile_url = "/api/scoring/business-profile/"
+    """KRA PIN format (P + 9 digits + letter), normalisation and uniqueness on businesses and assessments."""
+    businesses_url = "/api/scoring/businesses/"
     assess_url = "/api/scoring/assess/"
     FORMAT_MSG = "Enter a KRA PIN in the format P051234567X: the letter P, 9 digits, then a letter."
     DUP_MSG = "This KRA PIN is already registered to another business."
@@ -461,76 +467,56 @@ class KraPinTests(TestCase):
         self.owner = User.objects.create_user(username="pin1", email="pin1@test.ke", password="x", role="owner")
         self.other = User.objects.create_user(username="pin2", email="pin2@test.ke", password="x", role="owner")
 
-    def put_profile(self, user, pin):
+    def add_business(self, user, pin, **changes):
         self.client.force_authenticate(user)
-        return self.client.put(self.profile_url, {**self.BUSINESS, "kra_pin": pin}, format="json")
-
-    def profile(self, user):
-        from .models import BusinessProfile
-        return BusinessProfile.objects.get(user=user)
+        return self.client.post(self.businesses_url, {**self.BUSINESS, **changes, "kra_pin": pin}, format="json")
 
     def test_valid_pin_is_accepted(self):
-        res = self.put_profile(self.owner, "P051234567X")
-        self.assertEqual(res.status_code, 200, res.content)
-        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
+        res = self.add_business(self.owner, "P051234567X")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(BusinessProfile.objects.get(user=self.owner).kra_pin, "P051234567X")
 
     def test_lowercase_and_spaces_are_normalised(self):
-        res = self.put_profile(self.owner, " p051234567x ")
-        self.assertEqual(res.status_code, 200, res.content)
+        res = self.add_business(self.owner, " p051234567x ")
+        self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(res.json()["kra_pin"], "P051234567X")
-        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
 
     def test_bad_formats_are_rejected(self):
         for bad in ("A051234567X", "P05123456X", "P0512345678", "P051234567XX"):
-            res = self.put_profile(self.owner, bad)
+            res = self.add_business(self.owner, bad)
             self.assertEqual(res.status_code, 400, bad)
             self.assertEqual(res.json()["kra_pin"], [self.FORMAT_MSG], bad)
+        self.assertEqual(BusinessProfile.objects.count(), 0)
 
     def test_blank_pin_is_stored_as_null_and_does_not_clash(self):
-        self.assertEqual(self.put_profile(self.owner, "").status_code, 200)
-        self.assertEqual(self.put_profile(self.other, "  ").status_code, 200)
-        self.assertIsNone(self.profile(self.owner).kra_pin)
-        self.assertIsNone(self.profile(self.other).kra_pin)
+        self.assertEqual(self.add_business(self.owner, "").status_code, 201)
+        self.assertEqual(self.add_business(self.other, "  ").status_code, 201)
+        self.assertEqual(list(BusinessProfile.objects.values_list("kra_pin", flat=True)), [None, None])
 
-    def test_duplicate_pin_on_second_business_is_rejected(self):
-        self.assertEqual(self.put_profile(self.owner, "P051234567X").status_code, 200)
-        res = self.put_profile(self.other, "p051234567x")
+    def test_duplicate_pin_is_rejected_on_the_profile_page(self):
+        self.assertEqual(self.add_business(self.owner, "P051234567X").status_code, 201)
+        res = self.add_business(self.other, "p051234567x", business_name="Other Shop")
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.json()["kra_pin"], [self.DUP_MSG])
-        # Re-saving your own PIN is not a duplicate.
-        self.assertEqual(self.put_profile(self.owner, "P051234567X").status_code, 200)
+        self.assertNotIn("Pin Traders", res.content.decode())
+        res = self.add_business(self.owner, "P051234567X", business_name="Second Shop")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["kra_pin"], ["This KRA PIN is already registered to your business 'Pin Traders'."])
+        # Re-saving a business with its own PIN is not a duplicate.
+        pk = BusinessProfile.objects.get(user=self.owner).pk
+        res = self.client.patch(f"{self.businesses_url}{pk}/", {"kra_pin": "P051234567X", "employees_count": 9}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
 
-    def submit(self, user, pin, **changes):
-        self.client.force_authenticate(user)
-        return self.client.post(self.assess_url, {**LOW_RISK, **changes, "kra_pin": pin}, format="json")
-
-    def test_first_assessment_creates_profile_with_pin(self):
-        res = self.submit(self.owner, "p051234567x")
-        self.assertEqual(res.status_code, 201, res.content)
-        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
-
-    def test_assessment_never_overwrites_existing_pin(self):
-        self.assertEqual(self.submit(self.owner, "P051234567X").status_code, 201)
-        self.assertEqual(self.submit(self.owner, "P999999999Z").status_code, 201)
-        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
-
-    def test_assessment_fills_pin_when_profile_has_none(self):
-        self.assertEqual(self.put_profile(self.owner, "").status_code, 200)
-        self.assertEqual(self.submit(self.owner, "P051234567X").status_code, 201)
-        self.assertEqual(self.profile(self.owner).kra_pin, "P051234567X")
-
-    def test_assessment_with_bad_or_duplicate_pin_saves_nothing(self):
-        res = self.submit(self.owner, "A051234567X")
+    def test_assessment_with_bad_pin_saves_nothing(self):
+        self.client.force_authenticate(self.owner)
+        res = self.client.post(self.assess_url, {**LOW_RISK, "kra_pin": "A051234567X"}, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.json()["kra_pin"], [self.FORMAT_MSG])
-        self.put_profile(self.other, "P051234567X")
-        res = self.submit(self.owner, "P051234567X")
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.json()["kra_pin"], [self.DUP_MSG])
-        self.assertEqual(CreditRequest.objects.filter(user=self.owner).count(), 0)
+        self.assertEqual((CreditRequest.objects.count(), BusinessProfile.objects.count()), (0, 0))
 
     def test_analyst_sees_pin_owner_list_does_not(self):
-        created = self.submit(self.owner, "P051234567X").json()
+        self.client.force_authenticate(self.owner)
+        created = self.client.post(self.assess_url, {**LOW_RISK, "kra_pin": "P051234567X"}, format="json").json()
         self.assertNotIn("kra_pin", str(created))
         analyst = User.objects.create_user(username="pa", email="pa@test.ke", password="x", role="analyst")
         self.client.force_authenticate(analyst)
@@ -540,7 +526,6 @@ class KraPinTests(TestCase):
     def test_data_migration_normalises_and_nulls(self):
         import importlib
         from django.apps import apps
-        from .models import BusinessProfile
         migration = importlib.import_module("scoring.migrations.0008_normalise_kra_pin")
         rows = {}
         for i, raw in enumerate(["p051234567x", "A123456789B", "", "P051234567X", "P111111111Q"]):
@@ -559,45 +544,168 @@ class KraPinTests(TestCase):
         self.assertEqual((normalised, nulled), (1, 3))
 
 
-class BusinessProfileRoundTripTests(TestCase):
-    """PUT then GET returns the same values; an assessment never overwrites saved profile fields."""
-    url = "/api/scoring/business-profile/"
-    SAVED = {
-        "business_name": "Kamau Hardware", "kra_pin": "P051234567X", "sector": "Services", "county": "Kisumu",
-        "location_type": "Rural", "legal_status": "Partnership", "business_age_years": 7, "employees_count": 12,
-    }
+class BusinessLinkTests(TestCase):
+    """One business = one BusinessProfile = one KRA PIN; an owner may have several businesses.
+    An assessment is linked to the business the owner chose, never to a "latest" profile."""
+    assess_url = "/api/scoring/assess/"
+    businesses_url = "/api/scoring/businesses/"
+    OWN_MSG = ("This KRA PIN is already registered to your business 'Test Hardware'. "
+               "Select that business instead, or enter the PIN of the new business.")
+    DUP_MSG = "This KRA PIN is already registered to another business."
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="rt", email="rt@test.ke", password="x", role="owner")
-        self.client.force_authenticate(self.owner)
+        self.owner = User.objects.create_user(username="bl1", email="bl1@test.ke", password="x", role="owner")
+        self.other = User.objects.create_user(username="bl2", email="bl2@test.ke", password="x", role="owner")
 
-    def test_put_then_get_returns_same_values(self):
-        put = self.client.put(self.url, self.SAVED, format="json")
-        self.assertEqual(put.status_code, 200, put.content)
-        got = self.client.get(self.url).json()
-        for field, value in self.SAVED.items():
-            self.assertEqual(got[field], value, field)
+    def submit(self, user, **changes):
+        self.client.force_authenticate(user)
+        return self.client.post(self.assess_url, {**LOW_RISK, **changes}, format="json")
 
-    def test_assessment_keeps_saved_profile_fields(self):
-        self.client.put(self.url, self.SAVED, format="json")
-        # LOW_RISK differs in every profile field (name, sector, county, location, legal status, size).
-        res = self.client.post("/api/scoring/assess/", {**LOW_RISK, "kra_pin": "P999999999Z"}, format="json")
+    def first_business(self, user=None, pin="P051234567A"):
+        res = self.submit(user or self.owner, kra_pin=pin)  # LOW_RISK business_name: "Test Hardware"
         self.assertEqual(res.status_code, 201, res.content)
-        got = self.client.get(self.url).json()
-        for field, value in self.SAVED.items():
-            self.assertEqual(got[field], value, field)
+        return CreditRequest.objects.get(pk=CreditAssessment.objects.get(pk=res.json()["pk"]).request_id).business
 
-    def test_assessment_fills_only_empty_fields(self):
-        from .models import BusinessProfile
-        self.client.put(self.url, self.SAVED, format="json")
-        BusinessProfile.objects.filter(user=self.owner).update(business_name="", kra_pin=None)
-        self.client.post("/api/scoring/assess/", {**LOW_RISK, "kra_pin": "P999999999Z"}, format="json")
-        got = self.client.get(self.url).json()
-        self.assertEqual(got["business_name"], LOW_RISK["business_name"])  # was empty -> filled
-        self.assertEqual(got["kra_pin"], "P999999999Z")                     # was empty -> filled
-        self.assertEqual(got["sector"], "Services")                        # saved -> kept
+    def counts(self):
+        return CreditRequest.objects.count(), CreditAssessment.objects.count(), BusinessProfile.objects.count()
 
+    def test_second_business_with_a_new_pin_gets_its_own_profile(self):
+        first = self.first_business()
+        res = self.submit(self.owner, business_name="Kamau Kiosk", kra_pin="P099999999B")
+        self.assertEqual(res.status_code, 201, res.content)
+        a = CreditAssessment.objects.select_related("request__business").get(pk=res.json()["pk"])
+        self.assertNotEqual(a.request.business_id, first.pk)
+        self.assertEqual(a.request.business.business_name, "Kamau Kiosk")
+        self.assertEqual(a.request.business.kra_pin, "P099999999B")
+        self.assertEqual(a.request.business.user, self.owner)
+        self.assertEqual(res.json()["business_id"], a.request.business_id)
+        self.assertEqual(BusinessProfile.objects.filter(user=self.owner).count(), 2)
+
+    def test_same_pin_for_a_different_business_of_the_same_owner_is_refused(self):
+        self.first_business()
+        before = self.counts()
+        res = self.submit(self.owner, business_name="Kamau Kiosk", kra_pin="p051234567a")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json(), {"kra_pin": [self.OWN_MSG]})
+        self.assertEqual(self.counts(), before)
+
+    def test_same_pin_from_another_owner_is_refused_without_revealing_the_business(self):
+        self.first_business()
+        before = self.counts()
+        res = self.submit(self.other, business_name="Other Shop", kra_pin="P051234567A")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json(), {"kra_pin": [self.DUP_MSG]})
+        body = res.content.decode()
+        self.assertNotIn("Test Hardware", body)
+        self.assertNotIn(self.owner.email, body)
+        self.assertEqual(self.counts(), before)
+
+    def test_choosing_another_owners_business_is_404(self):
+        theirs = self.first_business(self.other)
+        before = self.counts()
+        res = self.submit(self.owner, business_id=theirs.pk, kra_pin=None)
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(self.submit(self.owner, business_id=999_999).status_code, 404)
+        self.assertEqual(self.counts(), before)
+
+    def test_choosing_an_existing_business_links_to_it_and_uses_its_name(self):
+        business = self.first_business()
+        res = self.submit(self.owner, business_id=business.pk, business_name="  test HARDWARE ", kra_pin="P051234567A")
+        self.assertEqual(res.status_code, 201, res.content)
+        a = CreditAssessment.objects.select_related("request").get(pk=res.json()["pk"])
+        self.assertEqual(a.request.business_id, business.pk)
+        self.assertEqual(a.request.business_name, "Test Hardware")  # the profile's name, not the payload's
+        # Name and PIN may also be left out entirely.
+        res = self.submit(self.owner, business_id=business.pk, business_name=None, kra_pin=None)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(BusinessProfile.objects.filter(user=self.owner).count(), 1)
+
+    def test_existing_business_with_a_different_pin_or_name_is_refused(self):
+        business = self.first_business()
+        before = self.counts()
+        res = self.submit(self.owner, business_id=business.pk, kra_pin="P099999999B")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("does not belong to 'Test Hardware'", res.json()["kra_pin"][0])
+        res = self.submit(self.owner, business_id=business.pk, business_name="Kamau Kiosk")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("choose Add a new business", res.json()["business_name"][0])
+        self.assertEqual(self.counts(), before)
+
+    def test_no_business_id_never_falls_back_to_the_latest_profile(self):
+        business = self.first_business()
+        res = self.submit(self.owner, business_name="Kamau Kiosk", kra_pin=None)
+        self.assertEqual(res.status_code, 201, res.content)
+        a = CreditAssessment.objects.select_related("request").get(pk=res.json()["pk"])
+        self.assertNotEqual(a.request.business_id, business.pk)
+        self.assertEqual(a.request.business.business_name, "Kamau Kiosk")
+        # A new business needs a name.
+        self.assertEqual(self.submit(self.owner, business_name="  ").status_code, 400)
+
+    def test_request_user_must_own_the_business(self):
+        theirs = self.first_business(self.other)
+        req = CreditRequest(user=self.owner, business=theirs, business_name=theirs.business_name, monthly_profit_kes=1000)
+        with self.assertRaises(DjangoValidationError):
+            req.save()
+        with self.assertRaises(DjangoValidationError):
+            req.full_clean()
+        self.assertFalse(CreditRequest.objects.filter(user=self.owner).exists())
+
+    def test_pin_is_editable_until_the_business_has_an_assessment(self):
+        self.client.force_authenticate(self.owner)
+        res = self.client.post(self.businesses_url, {**KraPinTests.BUSINESS, "kra_pin": "P011111111A"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        pk = res.json()["id"]
+        self.assertFalse(res.json()["pin_locked"])
+        res = self.client.patch(f"{self.businesses_url}{pk}/", {"kra_pin": "P022222222B"}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.submit(self.owner, business_id=pk, business_name=None, kra_pin=None).status_code, 201)
+
+        self.client.force_authenticate(self.owner)
+        got = self.client.get(f"{self.businesses_url}{pk}/").json()
+        self.assertEqual((got["pin_locked"], got["assessment_count"]), (True, 1))
+        res = self.client.patch(f"{self.businesses_url}{pk}/", {"kra_pin": "P033333333C"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["kra_pin"], ["Contact support to change a registered KRA PIN."])
+        res = self.client.patch(f"{self.businesses_url}{pk}/", {"kra_pin": None}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(BusinessProfile.objects.get(pk=pk).kra_pin, "P022222222B")
+        # Other fields stay editable; sending the unchanged PIN back is fine.
+        res = self.client.patch(f"{self.businesses_url}{pk}/", {"kra_pin": "P022222222B", "employees_count": 30}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(BusinessProfile.objects.get(pk=pk).employees_count, 30)
+
+    def test_owners_only_see_and_edit_their_own_businesses(self):
+        mine = self.first_business()
+        theirs = self.first_business(self.other, pin="P077777777C")
+        self.client.force_authenticate(self.owner)
+        listed = self.client.get(self.businesses_url).json()
+        self.assertEqual([b["id"] for b in listed], [mine.pk])
+        self.assertEqual(self.client.get(f"{self.businesses_url}{theirs.pk}/").status_code, 404)
+        self.assertEqual(self.client.patch(f"{self.businesses_url}{theirs.pk}/", {"employees_count": 1}, format="json").status_code, 404)
+
+    def test_check_business_links_reports_and_changes_nothing(self):
+        from io import StringIO
+        from django.core.management import call_command
+        mine = self.first_business()
+        theirs = self.first_business(self.other, pin="P077777777C")
+        good = self.submit(self.owner, business_id=mine.pk, business_name=None, kra_pin=None).json()["pk"]
+        # Plant the two bad shapes with .update(), which skips the model check.
+        bad_name = CreditAssessment.objects.get(pk=good).request
+        CreditRequest.objects.filter(pk=bad_name.pk).update(business_name="Kamau Kiosk")
+        bad_user = CreditRequest.objects.filter(user=self.owner).exclude(pk=bad_name.pk).first()
+        CreditRequest.objects.filter(pk=bad_user.pk).update(business=theirs)
+        snapshot = list(CreditRequest.objects.order_by("id").values())
+
+        out = StringIO()
+        call_command("check_business_links", stdout=out)
+        text = out.getvalue()
+        self.assertIn("Snapshot name differs from the linked business: 1", text)
+        self.assertIn(f"request {bad_name.pk} ", text)
+        self.assertIn("'Kamau Kiosk' -> business", text)
+        self.assertIn("Request user is not the business owner: 1", text)
+        self.assertIn(f"request {bad_user.pk} ", text)
+        self.assertEqual(list(CreditRequest.objects.order_by("id").values()), snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -833,3 +941,186 @@ class ModelV3Tests(TestCase):
         fairness = self.client.get("/api/scoring/admin/fairness/").json()
         collateral = next(d for d in fairness["dimensions"] if d["field"] == "collateral_level")
         self.assertEqual(collateral["groups"][0]["name"], "Low")
+
+
+# ---------------------------------------------------------------------------
+# Decision letter (PDF). pypdf is a test-only dependency: pip install -r requirements-dev.txt
+# ---------------------------------------------------------------------------
+class DecisionLetterTests(TestCase):
+    def setUp(self):
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="lo", email="lo@test.ke", password="x", role="owner",
+                                              full_name="Wanjiku Kamau")
+        self.other = User.objects.create_user(username="lx", email="lx@test.ke", password="x", role="owner")
+        self.analyst = User.objects.create_user(username="la", email="la@test.ke", password="x", role="analyst",
+                                                full_name="Otieno Analyst")
+
+    # helpers -------------------------------------------------------------
+    def submit(self, data=MODERATE_RISK, user=None):
+        self.client.force_authenticate(user or self.owner)
+        res = self.client.post("/api/scoring/assess/", data, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        return CreditAssessment.objects.get(pk=res.json()["pk"])
+
+    def decide(self, a, decision, note=""):
+        self.client.force_authenticate(self.analyst)
+        res = self.client.post(f"/api/scoring/assessments/{a.pk}/review/", {"decision": decision, "note": note}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        a.refresh_from_db()
+        return a
+
+    def letter(self, a, user=None, query=""):
+        self.client.force_authenticate(user or self.owner)
+        pk = a if isinstance(a, int) else a.pk
+        return self.client.get(f"/api/scoring/assessments/{pk}/letter/{query}")
+
+    @staticmethod
+    def pdf(content):
+        reader = PdfReader(BytesIO(getattr(content, "content", content)))
+        text = " ".join(" ".join(p.extract_text() for p in reader.pages).split())
+        return reader, text
+
+    # tests ---------------------------------------------------------------
+    def test_approved_letter_is_a_one_page_pdf_with_the_stored_figures(self):
+        a = self.decide(self.submit(), "approved", "Welcome aboard.")
+        res = self.letter(a)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res["Content-Type"], "application/pdf")
+        ref = f"BS-{timezone.localtime(a.reviewed_at).year}-{a.pk:06d}"
+        self.assertEqual(res["Content-Disposition"], f'attachment; filename="BiasharaScore_decision_{ref}.pdf"')
+        reader, text = self.pdf(res)
+        self.assertEqual(len(reader.pages), 1)
+        for expected in (
+            MODERATE_RISK["business_name"], f"{a.credit_score} out of 850", "Sample letter", f"Ref: {ref}",
+            "Wanjiku Kamau", "KRA PIN not provided",
+            # MODERATE_RISK: Moderate Risk with Moderate collateral -> 0.75 x 288,000 = 216,000.
+            "your application has been approved for up to KES 216,000", "repayable over 12 months",
+            # The limit is below the request, so the flat estimate is for the limit: 216,000 / 12.
+            "Estimated monthly repayment: KES 18,000",
+            "This is less than the KES 600,000 you asked for", a.risk_category,
+            "Scores run from 300 to 850.", "Welcome aboard.", "Otieno Analyst", "Your rights",
+            f"Model {a.model_version}", f"Assessment ASSESS-{a.pk}",
+        ):
+            self.assertIn(expected, text)
+        # Reasons: the 3 largest stored SHAP values by absolute size, in the report's wording.
+        top = sorted(a.shap_values, key=lambda v: abs(v["value"]), reverse=True)[:3]
+        for v in top:
+            word = "raised" if v["direction"] == "raises_risk" else "lowered"
+            self.assertIn(f"{v['label']} {word} the assessed risk.", text)
+
+    def test_the_letter_never_runs_past_one_page(self):
+        a = self.decide(self.submit(), "approved", "x" * 1000)
+        reader, text = self.pdf(self.letter(a))
+        self.assertEqual(len(reader.pages), 1)
+        squashed = text.replace(" ", "")
+        self.assertIn("x" * 600 + "…", squashed)
+        self.assertNotIn("x" * 601, squashed)
+        words = " ".join(["Please bring six months of M-Pesa statements and supplier invoices."] * 15)
+        a = self.decide(a, "referred", words)
+        reader, _ = self.pdf(self.letter(a))
+        self.assertEqual(len(reader.pages), 1)
+
+    def test_declined_letter_has_no_loan_amount(self):
+        a = self.decide(self.submit(HIGH_RISK), "declined", "Repayment record too weak for now.")
+        _, text = self.pdf(self.letter(a))
+        self.assertIn("After reviewing your application, we are unable to offer credit at this time.", text)
+        self.assertNotIn("KES", text)
+        self.assertNotIn("approved", text)
+
+    def test_referred_letter_asks_for_more_information(self):
+        a = self.decide(self.submit(), "referred", "Please send recent bank statements.")
+        _, text = self.pdf(self.letter(a))
+        self.assertIn("Before we can decide, we need more information from you. Please see the note below.", text)
+        self.assertIn("Please send recent bank statements.", text)
+        self.assertNotIn("KES", text)
+
+    def test_pending_assessment_returns_409(self):
+        a = self.submit()
+        res = self.letter(a)
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.json(), {"detail": LETTER_PENDING_MESSAGE})
+        self.assertEqual(self.letter(a, self.analyst).status_code, 409)
+        self.assertEqual(LetterDownload.objects.count(), 0)
+
+    def test_access_rules(self):
+        a = self.decide(self.submit(), "approved")
+        # Another owner gets the same 404 as for an ID that does not exist.
+        self.assertEqual(self.letter(a, self.other).status_code, 404)
+        self.assertEqual(self.letter(999_999, self.other).status_code, 404)
+        self.assertEqual(self.letter(a, self.analyst).status_code, 200)
+        admin = User.objects.create_user(username="ad", email="ad@test.ke", password="x", role="admin")
+        self.assertEqual(self.letter(a, admin).status_code, 200)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f"/api/scoring/assessments/{a.pk}/letter/").status_code, 401)
+
+    def test_inline_preview_is_staff_only_and_not_counted(self):
+        a = self.decide(self.submit(), "approved")
+        res = self.letter(a, self.analyst, "?inline=1")
+        self.assertTrue(res["Content-Disposition"].startswith("inline;"))
+        self.assertEqual(LetterDownload.objects.count(), 0)
+        res = self.letter(a, query="?inline=1")  # an owner always gets an attachment
+        self.assertTrue(res["Content-Disposition"].startswith("attachment;"))
+
+    def test_download_creates_a_letterdownload_row_and_the_count_reaches_the_analyst(self):
+        a = self.decide(self.submit(), "approved")
+        self.letter(a)
+        self.assertEqual(LetterDownload.objects.get().user, self.owner)
+        self.letter(a)
+        self.assertEqual(LetterDownload.objects.filter(assessment=a).count(), 2)
+        self.client.force_authenticate(self.analyst)
+        self.assertEqual(self.client.get(f"/api/scoring/assessments/{a.pk}/").json()["letter_downloads"], 2)
+
+    def test_letter_reflects_the_latest_decision(self):
+        a = self.decide(self.submit(), "approved")
+        self.assertIn("approved for up to", self.pdf(self.letter(a))[1])
+        a = self.decide(a, "declined", "Changed after a second look.")
+        _, text = self.pdf(self.letter(a))
+        self.assertIn("unable to offer credit", text)
+        self.assertIn("Changed after a second look.", text)
+
+    def test_legacy_assessment_without_shap_values_gets_a_valid_one_page_letter(self):
+        a = self.submit()
+        CreditAssessment.objects.filter(pk=a.pk).update(shap_values=[], model_version="xgb_msme_v1")
+        a = self.decide(CreditAssessment.objects.get(pk=a.pk), "approved")
+        reader, text = self.pdf(self.letter(a))
+        self.assertEqual(len(reader.pages), 1)
+        self.assertIn(letters.LEGACY_FACTORS, text)
+        self.assertNotIn("What could improve your result", text)
+        self.assertIn("Model xgb_msme_v1", text)
+
+    def test_tips_use_the_report_page_rule(self):
+        a = self.decide(self.submit(), "approved")
+        a.shap_values = [
+            {"feature": "collateral_level", "label": "Collateral", "value": 0.9, "direction": "raises_risk"},
+            {"feature": "sector", "label": "Sector", "value": 0.8, "direction": "raises_risk"},
+            {"feature": "cashflow_stability", "label": "Cash-flow stability", "value": 0.2, "direction": "raises_risk"},
+            {"feature": "late_payment_history", "label": "Late payment history", "value": 0.5, "direction": "raises_risk"},
+            {"feature": "tenure_months", "label": "Repayment period", "value": -0.4, "direction": "lowers_risk"},
+        ]
+        self.assertEqual(letters.improvement_tips(a), [
+            "Late payment history raised your risk the most among the answers you can change.",
+            "Cash-flow stability also raised your risk.",
+        ])
+        a.shap_values = [{"feature": "sector", "label": "Sector", "value": 0.8, "direction": "raises_risk"}]
+        self.assertEqual(letters.improvement_tips(a), [])
+        self.assertIn(letters.NO_TIPS, self.pdf(letters.build_decision_letter(a))[1])
+
+    def test_approved_at_the_full_amount_uses_the_stored_repayment(self):
+        a = self.decide(self.submit({**LOW_RISK, "loan_amount": 1_200_000}), "approved")
+        self.assertEqual(float(a.recommended_limit), 1_200_000)  # affordable 1,440,000, so the full request
+        _, text = self.pdf(self.letter(a))
+        self.assertIn(f"Estimated monthly repayment: {letters.kes(a.monthly_repayment_estimate)}", text)
+        self.assertNotIn("This is less than", text)
+
+    def test_reference_and_dates(self):
+        a = self.decide(self.submit(), "approved")
+        self.assertRegex(letters.letter_reference(a), r"^BS-\d{4}-\d{6}$")
+        self.assertRegex(letters.long_date(a.reviewed_at), r"^\d{1,2} [A-Z][a-z]+ \d{4}$")
+        self.assertIn(letters.long_date(a.reviewed_at), self.pdf(self.letter(a))[1])
+
+    def test_accent_matches_the_design_token(self):
+        tokens = Path(settings.BASE_DIR) / "frontend" / "credit-scoring-frontend" / "src" / "styles" / "tokens.css"
+        if not tokens.exists():
+            self.skipTest("frontend/ is not in this image")
+        first = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", tokens.read_text(encoding="utf-8"))
+        self.assertEqual(first.group(1).lower(), letters.ACCENT_HEX)

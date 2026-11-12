@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.conf import settings
@@ -6,6 +7,12 @@ from django.conf import settings
 KRA_PIN_PATTERN = r"^P\d{9}[A-Z]$"
 KRA_PIN_MESSAGE = "Enter a KRA PIN in the format P051234567X: the letter P, 9 digits, then a letter."
 KRA_PIN_DUPLICATE_MESSAGE = "This KRA PIN is already registered to another business."
+# The same owner already registered this PIN for one of their own businesses (name shown: it is theirs).
+KRA_PIN_OWN_BUSINESS_MESSAGE = (
+    "This KRA PIN is already registered to your business '{name}'. "
+    "Select that business instead, or enter the PIN of the new business."
+)
+KRA_PIN_LOCKED_MESSAGE = "Contact support to change a registered KRA PIN."
 
 
 def normalise_kra_pin(value):
@@ -17,6 +24,7 @@ def normalise_kra_pin(value):
 
 
 class BusinessProfile(models.Model):
+    """One business = one profile = one KRA PIN. An owner may have several businesses."""
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -40,6 +48,10 @@ class BusinessProfile(models.Model):
         # Every write path (API, admin, shell) stores the same normalised form, or NULL.
         self.kra_pin = normalise_kra_pin(self.kra_pin)
         super().save(*args, **kwargs)
+
+    def has_assessments(self):
+        """Once a business has been assessed, its KRA PIN is locked."""
+        return CreditAssessment.objects.filter(request__business=self).exists()
 
     def __str__(self):
         return self.business_name
@@ -95,6 +107,18 @@ class CreditRequest(models.Model):
     class Meta:
         db_table = "scoring_creditrequest"
         ordering = ["-submitted_at"]
+
+    def clean(self):
+        super().clean()
+        if self.business_id and self.user_id and self.business.user_id != self.user_id:
+            raise ValidationError({"business": "A credit request can only be linked to a business owned by the same user."})
+
+    def save(self, *args, **kwargs):
+        # Checked on every save (API, admin, shell), not only in forms: a request must never be
+        # linked to someone else's business.
+        if self.business_id and self.user_id and self.business.user_id != self.user_id:
+            raise ValidationError("A credit request can only be linked to a business owned by the same user.")
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.business_name or 'Request'} #{self.id}"
@@ -161,3 +185,15 @@ class LessonView(models.Model):
 
     def __str__(self):
         return f"{self.user_id} read {self.feature_key} on {self.viewed_on}"
+
+
+class LetterDownload(models.Model):
+    """One download of a decision letter (GET .../letter/ as an attachment). Inline previews are not logged."""
+    assessment = models.ForeignKey(CreditAssessment, on_delete=models.CASCADE, related_name="letter_downloads")
+    # SET_NULL keeps the count if an account is later deleted.
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name="letter_downloads")
+    downloaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Letter for assessment {self.assessment_id} downloaded by {self.user_id} at {self.downloaded_at}"

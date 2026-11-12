@@ -6,6 +6,7 @@ import RiskScale from "../../components/RiskScale";
 import ShapChart from "../../components/ShapChart";
 import LegacyTag from "../../components/LegacyTag";
 import AffordabilityPanel from "../../components/AffordabilityPanel";
+import DecisionLetterButton from "../../components/DecisionLetterButton";
 import { card, cardHead, cardTitle, muted, inputStyle, kes, fmtDateTime } from "../../components/analystUi";
 import { getCurrentUser, fetchAssessmentDetail, reviewAssessment } from "../../lib/api";
 
@@ -144,6 +145,19 @@ export default function AssessmentReview() {
               <button type="button" className="btn btn-secondary" disabled={saving || needsNote} onClick={() => decide("declined")}>Decline</button>
             </div>
             {saved && <p role="status" style={{ color: "var(--risk-low)", marginBottom: 0 }}>{saved}</p>}
+
+            {/* The letter the applicant receives: built from the latest saved decision, never the unsaved note. */}
+            {a.review_status !== "pending" && (
+              <div style={{ marginTop: "var(--space-5)", paddingTop: "var(--space-4)", borderTop: "1px solid var(--line)", display: "grid", gap: "var(--space-2)" }}>
+                <DecisionLetterButton pk={a.pk} status={a.review_status} variant="secondary" preview />
+                <p style={{ ...muted, margin: 0 }}>
+                  Opens in a new tab, exactly as the applicant receives it.{" "}
+                  {a.letter_downloads > 0
+                    ? `Letter downloaded ${a.letter_downloads} ${a.letter_downloads === 1 ? "time" : "times"}.`
+                    : "The applicant has not downloaded the letter yet."}
+                </p>
+              </div>
+            )}
           </aside>
         </div>
       )}

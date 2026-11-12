@@ -264,24 +264,36 @@ export async function updateMe(data) {
   return body;
 }
 
-export async function saveBusinessProfile(data) {
-  const res = await authFetch(`${BASE}/scoring/business-profile/`, {
-    method: "PUT",
+// The signed-in owner's businesses (oldest first). One business = one profile = one KRA PIN.
+// Each has assessment_count and pin_locked (true once it has an assessment).
+export async function fetchBusinesses() {
+  const res = await authFetch(`${BASE}/scoring/businesses/`, {
+    headers: {},
+  });
+  if (!res.ok) throw new Error(await readError(res, "Your businesses could not be loaded."));
+  return res.json();
+}
+
+export async function createBusiness(data) {
+  const res = await authFetch(`${BASE}/scoring/businesses/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw fieldError(body, "The business could not be added.");
+  return body;
+}
+
+export async function updateBusiness(id, data) {
+  const res = await authFetch(`${BASE}/scoring/businesses/${id}/`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw fieldError(body, "Your business details could not be saved.");
   return body;
-}
-
-// The signed-in owner's saved business profile, or {} if there is none yet.
-export async function fetchBusinessProfile() {
-  const res = await authFetch(`${BASE}/scoring/business-profile/`, {
-    headers: {},
-  });
-  if (!res.ok) throw new Error(await readError(res, "Your business profile could not be loaded."));
-  return res.json();
 }
 
 async function readError(res, fallback) {
@@ -396,3 +408,44 @@ export async function downloadAssessmentsCsv(params = {}) {
   URL.revokeObjectURL(url);
 }
 
+
+// The PDF decision letter of a decided assessment, as a Blob plus the server's filename.
+// Owners: their own assessments only. inline=true (analysts and admins) asks for an inline preview,
+// which the server does not count as a download.
+async function fetchDecisionLetter(pk, { inline = false } = {}) {
+  const res = await authFetch(`${BASE}/scoring/assessments/${pk}/letter/${inline ? "?inline=1" : ""}`, {
+    headers: {},
+  });
+  if (!res.ok) throw new Error(await readError(res, "The decision letter could not be prepared. Try again."));
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || `BiasharaScore_decision_${pk}.pdf`;
+  return { blob: await res.blob(), filename };
+}
+
+export async function downloadDecisionLetter(pk) {
+  const { blob, filename } = await fetchDecisionLetter(pk);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+// Opens the letter in a new tab. The tab is opened straight away (inside the click), so pop-up
+// blockers allow it, and pointed at the PDF once it has loaded.
+export async function previewDecisionLetter(pk) {
+  const tab = window.open("", "_blank");
+  try {
+    const { blob } = await fetchDecisionLetter(pk, { inline: true });
+    const url = URL.createObjectURL(blob);
+    if (tab) tab.location.href = url;
+    else window.location.assign(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    tab?.close();
+    throw e;
+  }
+}

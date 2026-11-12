@@ -6,7 +6,9 @@ import StatusPill from "../components/StatusPill";
 import { Columns } from "../components/charts";
 import { riskKeyFromCategory } from "../components/RiskScale";
 import LegacyTag from "../components/LegacyTag";
-import { getCurrentUser, fetchMyAssessments } from "../lib/api";
+import BusinessFilter from "../components/BusinessFilter";
+import { getCurrentUser, fetchMyAssessments, fetchBusinesses } from "../lib/api";
+import { matchesBusiness } from "../lib/businesses";
 
 const kes = (n) => (n == null || Number.isNaN(n) ? "Not recorded" : `KES ${Math.round(n).toLocaleString("en-KE")}`);
 const RISK_LABEL = { low: "Low risk", moderate: "Moderate risk", high: "High risk" };
@@ -85,7 +87,9 @@ function ScoreTrend({ points }) {
 export default function Analytics() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [assessments, setAssessments] = useState([]);
+  const [all, setAll] = useState([]);
+  const [businesses, setBusinesses] = useState([]);
+  const [business, setBusiness] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-run the load
@@ -97,7 +101,9 @@ export default function Analytics() {
         const [me, list] = await Promise.all([getCurrentUser(), fetchMyAssessments()]);
         if (cancelled) return;
         setUser(me);
-        setAssessments(Array.isArray(list) ? list : []);
+        setAll(Array.isArray(list) ? list : []);
+        // Only for the business filter: analytics still work without it.
+        fetchBusinesses().then((b) => { if (!cancelled) setBusinesses(Array.isArray(b) ? b : []); }).catch(() => {});
       } catch {
         if (!cancelled) setError("We could not load your analytics.");
       } finally {
@@ -113,6 +119,9 @@ export default function Analytics() {
     setAttempt((n) => n + 1);
   }
 
+  // Everything below (scores, trend, factors, revenue, table) follows the business filter.
+  const assessments = useMemo(() => all.filter((a) => matchesBusiness(a, business)), [all, business]);
+  const chosen = businesses.find((b) => String(b.id) === business);
   const chrono = useMemo(() => [...assessments].reverse(), [assessments]);
   const latest = assessments[0] || null;
   const previous = assessments[1] || null;
@@ -143,7 +152,10 @@ export default function Analytics() {
       <div className="stack">
         <header className="page-head">
           <h1>Your credit picture</h1>
-          <p>How your score has moved, and what keeps shaping it.</p>
+          <p>How your score has moved, and what keeps shaping it.{chosen ? ` Showing ${chosen.business_name} only.` : ""}</p>
+          {!loading && all.length > 0 && (
+            <BusinessFilter businesses={businesses} value={business} onChange={setBusiness} style={{ maxWidth: 360, marginTop: "var(--space-4)" }} />
+          )}
         </header>
 
         <LoadError message={error} onRetry={retry} busy={loading} />
@@ -158,7 +170,9 @@ export default function Analytics() {
           <section className="panel">
             <h2 className="panel-title">No assessments yet</h2>
             <p style={{ color: "var(--ink-2)", marginTop: 0 }}>
-              Once you run an assessment, your score history and the factors behind it appear here.
+              {chosen
+                ? `There are no assessments for ${chosen.business_name} yet.`
+                : "Once you run an assessment, your score history and the factors behind it appear here."}
             </p>
             <button type="button" className="btn btn-primary" onClick={() => navigate("/assessment/new")}>Start an assessment</button>
           </section>
@@ -234,7 +248,7 @@ export default function Analytics() {
                 <table className="table">
                   <thead>
                     <tr>
-                      {["Date", "Score", "Risk", "Recommended limit", "Review"].map((h) => <th key={h}>{h}</th>)}
+                      {["Date", "Business", "Score", "Risk", "Recommended limit", "Review"].map((h) => <th key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -243,6 +257,7 @@ export default function Analytics() {
                       return (
                         <tr key={a.id}>
                           <td style={{ whiteSpace: "nowrap" }}>{a.created_at}<LegacyTag record={a} /></td>
+                          <td>{a.business_name || "Business not named"}</td>
                           <td className="num"><strong>{a.credit_score}</strong></td>
                           <td style={{ color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
                           <td className="num">{Number(a.recommended_limit) ? kes(a.recommended_limit) : "None"}</td>

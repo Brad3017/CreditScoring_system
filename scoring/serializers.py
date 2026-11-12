@@ -1,11 +1,11 @@
 from django.core.validators import RegexValidator
 from rest_framework import serializers
 from rest_framework.fields import empty
-from rest_framework.validators import UniqueValidator
 from django.contrib.auth import get_user_model
 from .models import (
     BusinessProfile, CreditRequest, CreditAssessment,
-    KRA_PIN_PATTERN, KRA_PIN_MESSAGE, KRA_PIN_DUPLICATE_MESSAGE, normalise_kra_pin,
+    KRA_PIN_PATTERN, KRA_PIN_MESSAGE, KRA_PIN_DUPLICATE_MESSAGE, KRA_PIN_OWN_BUSINESS_MESSAGE,
+    KRA_PIN_LOCKED_MESSAGE, normalise_kra_pin,
 )
 from . import services
 
@@ -29,20 +29,76 @@ class KraPinField(serializers.CharField):
         return super().run_validation(data)
 
 
-class KraPinSerializer(serializers.Serializer):
-    """Format check only, for the PIN sent with an assessment (uniqueness is checked in the view)."""
+def pin_taken_message(pin, user, exclude_pk=None, own_message=KRA_PIN_OWN_BUSINESS_MESSAGE):
+    """None when no OTHER business holds this PIN. Otherwise the message to show: the owner's own
+    business is named; another owner's business is never named or hinted at."""
+    if not pin:
+        return None
+    qs = BusinessProfile.objects.filter(kra_pin=pin)
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+    holder = qs.only("user_id", "business_name").first()
+    if holder is None:
+        return None
+    if holder.user_id == user.pk:
+        return own_message.format(name=holder.business_name)
+    return KRA_PIN_DUPLICATE_MESSAGE
+
+
+class AssessmentBusinessSerializer(serializers.Serializer):
+    """Which business an assessment is for. Either business_id (one of the owner's saved businesses)
+    or, with no business_id, a NEW business described by business_name and kra_pin.
+    Format checks only; ownership and PIN uniqueness are checked in the view, inside the transaction."""
+    business_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    business_name = serializers.CharField(required=False, allow_null=True, allow_blank=True, max_length=150)
     kra_pin = KraPinField()
+
+    def validate(self, attrs):
+        if attrs.get("business_id") is None and not (attrs.get("business_name") or "").strip():
+            raise serializers.ValidationError({"business_name": "Enter the business name."})
+        return attrs
+
+
+# Fields an owner edits on a business. PIN rules are in validate_kra_pin.
+BUSINESS_FIELDS = [
+    "business_name", "kra_pin", "sector", "county", "location_type", "legal_status",
+    "business_age_years", "employees_count",
+]
 
 
 class BusinessProfileSerializer(serializers.ModelSerializer):
-    kra_pin = KraPinField(
-        validators=[UniqueValidator(queryset=BusinessProfile.objects.all(), message=KRA_PIN_DUPLICATE_MESSAGE)],
-    )
+    kra_pin = KraPinField()
+    assessment_count = serializers.SerializerMethodField()
+    pin_locked = serializers.SerializerMethodField()
 
     class Meta:
         model = BusinessProfile
-        fields = "__all__"
-        read_only_fields = ["id", "user", "created_at"]
+        fields = ["id", *BUSINESS_FIELDS, "created_at", "assessment_count", "pin_locked"]
+        read_only_fields = ["id", "created_at"]
+
+    def get_assessment_count(self, obj):
+        return CreditAssessment.objects.filter(request__business=obj).count()
+
+    def get_pin_locked(self, obj):
+        return self.get_assessment_count(obj) > 0
+
+    def validate_business_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Enter the business name.")
+        return value
+
+    def validate_kra_pin(self, pin):
+        instance = self.instance
+        if instance is not None and pin != instance.kra_pin and instance.has_assessments():
+            raise serializers.ValidationError(KRA_PIN_LOCKED_MESSAGE)
+        message = pin_taken_message(
+            pin, self.context["request"].user, exclude_pk=instance.pk if instance else None,
+            own_message="This KRA PIN is already registered to your business '{name}'.",
+        )
+        if message:
+            raise serializers.ValidationError(message)
+        return pin
 
 
 class ApplicantSerializer(serializers.ModelSerializer):
@@ -68,7 +124,9 @@ class CreditRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = CreditRequest
         fields = "__all__"
-        read_only_fields = ["id", "user", "submitted_at", "business"]
+        # business and business_name are set by the view from the chosen BusinessProfile
+        # (AssessmentBusinessSerializer reads the business choice), never from this payload.
+        read_only_fields = ["id", "user", "submitted_at", "business", "business_name"]
         extra_kwargs = {f: {"required": True} for f in MODEL_INPUT_FIELDS}
 
     def validate(self, attrs):

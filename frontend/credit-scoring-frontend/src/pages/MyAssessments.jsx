@@ -5,7 +5,10 @@ import LoadError from "../components/LoadError";
 import { riskKeyFromCategory } from "../components/RiskScale";
 import LegacyTag from "../components/LegacyTag";
 import StatusPill from "../components/StatusPill";
-import { getCurrentUser, fetchMyAssessments } from "../lib/api";
+import DecisionLetterButton from "../components/DecisionLetterButton";
+import BusinessFilter from "../components/BusinessFilter";
+import { getCurrentUser, fetchMyAssessments, fetchBusinesses } from "../lib/api";
+import { matchesBusiness } from "../lib/businesses";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
 
@@ -21,6 +24,8 @@ export default function MyAssessments() {
   const [attempt, setAttempt] = useState(0); // bumped by Retry to re-run the load
   const [query, setQuery] = useState("");
   const [risk, setRisk] = useState("all");
+  const [businesses, setBusinesses] = useState([]);
+  const [business, setBusiness] = useState("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +35,8 @@ export default function MyAssessments() {
         if (cancelled) return;
         setUser(me);
         setAssessments(Array.isArray(list) ? list : []);
+        // Only for the business filter: the list still works without it.
+        fetchBusinesses().then((b) => { if (!cancelled) setBusinesses(Array.isArray(b) ? b : []); }).catch(() => {});
       } catch {
         if (!cancelled) setError("We could not load your assessments.");
       } finally {
@@ -56,9 +63,9 @@ export default function MyAssessments() {
         (a.id || "").toLowerCase().includes(q) ||
         (a.business_name || "").toLowerCase().includes(q);
       const matchesRisk = risk === "all" || riskKeyFromCategory(a.risk_category) === risk;
-      return matchesText && matchesRisk;
+      return matchesText && matchesRisk && matchesBusiness(a, business);
     });
-  }, [assessments, query, risk]);
+  }, [assessments, query, risk, business]);
 
   function exportCSV() {
     if (!assessments.length) return;
@@ -122,6 +129,7 @@ export default function MyAssessments() {
                   <option value="high">High risk</option>
                 </select>
               </label>
+              <BusinessFilter businesses={businesses} value={business} onChange={setBusiness} />
               <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: "0 0 var(--space-2) auto" }} aria-live="polite">
                 Showing {visible.length} of {assessments.length}
               </p>
@@ -158,7 +166,16 @@ export default function MyAssessments() {
                             {key ? RISK_LABEL[key] : "–"}
                           </td>
                           <td style={{ textAlign: "right" }}>
-                            <button type="button" className="btn btn-secondary" onClick={() => openReport(item)}>View report</button>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-4)", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                              <DecisionLetterButton
+                                pk={item.pk}
+                                status={item.review_status}
+                                variant="link"
+                                label="Letter"
+                                ariaLabel={`Download the decision letter for ${item.business_name || item.id}`}
+                              />
+                              <button type="button" className="btn btn-secondary" onClick={() => openReport(item)}>View report</button>
+                            </div>
                           </td>
                         </tr>
                       );

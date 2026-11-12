@@ -9,6 +9,7 @@ import OutOfRangeNotice from "../components/OutOfRangeNotice";
 import ImprovementTips from "../components/ImprovementTips";
 import WhatIfPanel from "../components/WhatIfPanel";
 import LegacyTag from "../components/LegacyTag";
+import DecisionLetterButton from "../components/DecisionLetterButton";
 import { getCurrentUser } from "../lib/api";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -83,6 +84,11 @@ export default function AssessmentResultPage() {
                 ? "A credit analyst has not reviewed this result yet. The score is a model estimate, not a loan decision."
                 : "No note was left with this decision."}
             </p>
+          )}
+          {assessment.review_status && assessment.review_status !== "pending" && (
+            <div className="no-print" style={{ marginTop: "var(--space-4)" }}>
+              <DecisionLetterButton pk={assessment.pk} status={assessment.review_status} />
+            </div>
           )}
         </section>
 

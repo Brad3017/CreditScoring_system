@@ -1,15 +1,27 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { COUNTIES } from "../lib/counties";
-import { fetchBusinessProfile, getCurrentUser, submitAssessment } from "../lib/api";
+import { fetchBusinesses, getCurrentUser, submitAssessment } from "../lib/api";
 import { KRA_PIN_MESSAGE, KRA_PIN_PLACEHOLDER, isValidKraPin, normaliseKraPin } from "../lib/kraPin";
-import { useEffect } from "react";
 
 const DRAFT_KEY = "biasharascore_assessment_draft";
 
 // Business fields that live on the saved BusinessProfile and are prefilled from it.
 const PROFILE_FIELDS = ["business_name", "sector", "county", "location_type", "legal_status", "business_age_years", "employees_count"];
+
+// business_choice: "" (not chosen yet), "new" (add a new business) or a saved business's id (as a string).
+const NEW = "new";
+
+// The draft's choice checked against the owner's saved businesses. A chosen business always carries its
+// saved name and PIN; a choice that no longer exists is cleared, and so are the name and PIN with it.
+function reconcile(f, list) {
+  if (!list.length) return f.business_choice === NEW ? f : { ...f, business_choice: NEW, business_name: "", kra_pin: "" };
+  if (!f.business_choice || f.business_choice === NEW) return f;
+  const b = list.find((x) => String(x.id) === f.business_choice);
+  if (!b) return { ...f, business_choice: "", business_name: "", kra_pin: "" };
+  return { ...f, business_name: b.business_name, kra_pin: b.kra_pin || "" };
+}
 
 const STEPS = [
   { id: 1, title: "Business" },
@@ -19,6 +31,7 @@ const STEPS = [
 ];
 
 const INITIAL = {
+  business_choice: "",
   business_name: "",
   kra_pin: "",
   legal_status: "Sole",
@@ -52,11 +65,17 @@ const isWhole = (v, min, max) => /^\d+$/.test(String(v)) && Number(v) >= min && 
 const isNumber = (v, min) => String(v).trim() !== "" && !Number.isNaN(Number(v)) && Number(v) >= min;
 
 // Returns { field: message } for the given step. Empty object means the step is valid.
-function validate(step, f) {
+// selected: the chosen saved business, or null for a new one.
+function validate(step, f, selected) {
   const e = {};
   if (step === 1) {
-    if (!f.business_name.trim()) e.business_name = "Enter the business name.";
-    if (!isValidKraPin(f.kra_pin)) e.kra_pin = KRA_PIN_MESSAGE;
+    if (!f.business_choice || (f.business_choice !== NEW && !selected)) {
+      e.business_choice = "Choose which business this assessment is for, or add a new one.";
+    } else if (f.business_choice === NEW) {
+      // A saved business brings its own name and PIN; only a new one needs them entered.
+      if (!f.business_name.trim()) e.business_name = "Enter the business name.";
+      if (!isValidKraPin(f.kra_pin)) e.kra_pin = KRA_PIN_MESSAGE;
+    }
     if (!COUNTIES.includes(f.county)) e.county = "Choose a county from the list.";
     if (!isWhole(f.business_age_years, 0, 200)) e.business_age_years = "Enter whole years, 0 or more.";
     if (!isWhole(f.employees_count, 0, 10000)) e.employees_count = "Enter a whole number of employees.";
@@ -84,10 +103,14 @@ function validate(step, f) {
 
 // Converts the form's strings into the types the API expects.
 // repayment_confidence is no longer asked (model v3); an older saved draft may still hold it, so drop it.
-function toPayload({ repayment_confidence: _unused, ...f }) {
+// A saved business is sent by id only (the server uses its saved name and PIN); a new one by name and PIN.
+function toPayload({ repayment_confidence: _unused, business_choice: _choice, kra_pin, ...f }, selected) {
+  const business = selected
+    ? { business_id: selected.id, business_name: selected.business_name }
+    : { kra_pin: normaliseKraPin(kra_pin) };
   return {
     ...f,
-    kra_pin: normaliseKraPin(f.kra_pin),
+    ...business,
     business_age_years: Number(f.business_age_years),
     employees_count: Number(f.employees_count),
     monthly_revenue_kes: Number(f.monthly_revenue_kes),
@@ -109,30 +132,51 @@ export default function NewAssessment() {
   const [submitError, setSubmitError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  // True when the business profile already holds a PIN: it is shown read-only and never overwritten.
-  const [pinLocked, setPinLocked] = useState(false);
+  // The owner's saved businesses: null while loading.
+  const [businesses, setBusinesses] = useState(null);
+  const [businessLoadError, setBusinessLoadError] = useState("");
+
+  function loadBusinesses() {
+    return fetchBusinesses()
+      .then((list) => {
+        const safe = Array.isArray(list) ? list : [];
+        setBusinesses(safe);
+        setBusinessLoadError("");
+        setForm((f) => reconcile(f, safe));
+      })
+      .catch(() => {
+        // Not fatal: the owner can still add a new business. The server refuses a PIN that is already registered.
+        setBusinesses([]);
+        setBusinessLoadError("Your saved businesses could not be loaded, so only a new business can be added right now.");
+        setForm((f) => reconcile(f, []));
+      });
+  }
 
   useEffect(() => {
     getCurrentUser().then(setUser).catch(() => {});
-    fetchBusinessProfile()
-      .then((profile) => {
-        if (!profile?.id) return; // No saved profile yet: the owner fills the business step.
-        // Prefill from the saved profile. A field the owner already changed (e.g. in a saved draft)
-        // is left alone; the server never overwrites saved profile fields from an assessment anyway.
-        setForm((f) => {
-          const next = { ...f };
-          for (const field of PROFILE_FIELDS) {
-            const saved = profile[field];
-            if (saved == null || saved === "") continue;
-            if (f[field] === "" || f[field] === INITIAL[field]) next[field] = String(saved);
-          }
-          if (profile.kra_pin) next.kra_pin = profile.kra_pin;
-          return next;
-        });
-        if (profile.kra_pin) setPinLocked(true);
-      })
-      .catch(() => {}); // Not fatal: the form still works without a prefill.
+    loadBusinesses();
   }, []);
+
+  const isNew = form.business_choice === NEW;
+  const selected = !isNew && businesses ? businesses.find((b) => String(b.id) === form.business_choice) || null : null;
+
+  // Choosing a saved business fills in all of its details; adding a new one starts with an empty name and PIN.
+  function chooseBusiness(value) {
+    setErrors({});
+    setSubmitError("");
+    setNotice("");
+    if (value === NEW) {
+      setForm((f) => (f.business_choice === NEW ? f : { ...f, business_choice: NEW, business_name: "", kra_pin: "" }));
+      return;
+    }
+    const b = (businesses || []).find((x) => String(x.id) === value);
+    if (!b) return;
+    setForm((f) => {
+      const next = { ...f, business_choice: value, kra_pin: b.kra_pin || "" };
+      for (const field of PROFILE_FIELDS) if (b[field] != null && b[field] !== "") next[field] = String(b[field]);
+      return next;
+    });
+  }
 
   function update(e) {
     const { name } = e.target;
@@ -143,7 +187,7 @@ export default function NewAssessment() {
   }
 
   function next() {
-    const found = validate(step, form);
+    const found = validate(step, form, selected);
     setErrors(found);
     if (Object.keys(found).length === 0) setStep((s) => Math.min(4, s + 1));
   }
@@ -160,7 +204,7 @@ export default function NewAssessment() {
   async function submit() {
     // Re-check every step before sending, in case the user jumped around.
     for (const s of [1, 2, 3]) {
-      const found = validate(s, form);
+      const found = validate(s, form, selected);
       if (Object.keys(found).length) {
         setErrors(found);
         setStep(s);
@@ -170,7 +214,7 @@ export default function NewAssessment() {
     setBusy(true);
     setSubmitError("");
     try {
-      const result = await submitAssessment(toPayload(form));
+      const result = await submitAssessment(toPayload(form, selected));
       try {
         localStorage.removeItem(DRAFT_KEY);
       } catch {}
@@ -180,6 +224,10 @@ export default function NewAssessment() {
       if (err.fields && Object.keys(err.fields).length) {
         setErrors(err.fields);
         if (err.fields.kra_pin || err.fields.business_name) setStep(1);
+      } else if (selected && /business not found/i.test(err.message || "")) {
+        // The chosen business is gone (or was never this owner's): choose again.
+        setStep(1);
+        await loadBusinesses();
       }
       setSubmitError(err.message || "The assessment could not be completed. Check your details and try again.");
     } finally {
@@ -204,11 +252,23 @@ export default function NewAssessment() {
       </ol>
 
       {step === 1 && (
-        <Section title="Business">
-          <Field label="Business name" name="business_name" value={form.business_name} onChange={update} error={errors.business_name} required />
+        <BusinessChoice
+          businesses={businesses}
+          value={form.business_choice}
+          onChange={chooseBusiness}
+          error={errors.business_choice}
+          loadError={businessLoadError}
+        />
+      )}
+
+      {step === 1 && form.business_choice && (isNew || selected) && (
+        <Section title={isNew ? "New business" : "Business details"}>
+          <Field label="Business name" name="business_name" value={form.business_name} onChange={update} error={errors.business_name} required={isNew}
+            readOnly={!isNew} hint={isNew ? null : "From your business profile. To assess a different business, choose Add a new business."} />
           <Field label="KRA PIN" name="kra_pin" value={form.kra_pin} onChange={update} error={errors.kra_pin}
-            placeholder={KRA_PIN_PLACEHOLDER} maxLength={11} autoCapitalize="characters" spellCheck={false}
-            readOnly={pinLocked} hint={pinLocked ? "Change it in Business profile" : null} />
+            placeholder={isNew ? KRA_PIN_PLACEHOLDER : "Not saved"} maxLength={11} autoCapitalize="characters" spellCheck={false}
+            required={isNew} readOnly={!isNew}
+            hint={isNew ? "The PIN of this business. Each business has its own KRA PIN." : selected?.kra_pin ? "Registered to this business." : "No KRA PIN is saved for this business. You can add it on your business profile."} />
           <SelectField label="Legal structure" name="legal_status" value={form.legal_status} onChange={update}
             options={[["Sole", "Sole proprietorship"], ["Partnership", "Partnership"], ["Limited", "Limited company"]]} />
           <SelectField label="Sector" name="sector" value={form.sector} onChange={update}
@@ -257,7 +317,7 @@ export default function NewAssessment() {
           <legend id="review-heading">Check your details</legend>
           <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "var(--space-4)", margin: 0 }}>
             <Review label="Business" value={form.business_name} />
-            <Review label="KRA PIN" value={normaliseKraPin(form.kra_pin)} />
+            <Review label="KRA PIN" value={selected ? selected.kra_pin || "Not saved" : normaliseKraPin(form.kra_pin)} />
             <Review label="County" value={form.county} />
             <Review label="Sector" value={form.sector} />
             <Review label="Monthly revenue" value={`KES ${Number(form.monthly_revenue_kes).toLocaleString("en-KE")}`} />
@@ -294,6 +354,52 @@ function loadDraft() {
   } catch {
     return null;
   }
+}
+
+// "Which business is this for?": the owner's saved businesses (name and PIN) and "Add a new business".
+function BusinessChoice({ businesses, value, onChange, error, loadError }) {
+  const options = [
+    ...(businesses || []).map((b) => ({ value: String(b.id), title: b.business_name, detail: b.kra_pin ? `KRA PIN ${b.kra_pin}` : "No KRA PIN saved" })),
+    { value: NEW, title: "Add a new business", detail: "A different business, with its own KRA PIN" },
+  ];
+  return (
+    <fieldset className="form-group" aria-describedby={error ? "business-choice-err" : undefined}>
+      <legend>Which business is this for?</legend>
+      {businesses == null ? (
+        <p style={{ color: "var(--ink-2)", margin: 0 }}>Loading your businesses…</p>
+      ) : (
+        <div role="radiogroup" style={{ display: "grid", gap: "var(--space-3)" }}>
+          {options.map((o) => {
+            const checked = value === o.value;
+            return (
+              <label
+                key={o.value}
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: "var(--space-3)", cursor: "pointer",
+                  padding: "var(--space-3) var(--space-4)", borderRadius: "var(--radius)",
+                  border: `1px solid ${checked ? "var(--accent)" : "var(--line-strong)"}`,
+                  background: checked ? "var(--accent-soft)" : "var(--surface)",
+                }}
+              >
+                <input type="radio" name="business_choice" value={o.value} checked={checked} onChange={() => onChange(o.value)} style={{ marginTop: 4 }} />
+                <span>
+                  <span style={{ display: "block", fontWeight: 600 }}>{o.title}</span>
+                  <span className={o.value === NEW ? undefined : "num"} style={{ display: "block", color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{o.detail}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {loadError && <p role="alert" style={{ color: "var(--risk-high)", fontSize: "var(--text-xs)", margin: "var(--space-3) 0 0" }}>{loadError}</p>}
+      {error && <p id="business-choice-err" style={{ color: "var(--risk-high)", fontSize: "var(--text-xs)", margin: "var(--space-3) 0 0" }}>{error}</p>}
+      {businesses?.length > 0 && (
+        <p style={{ color: "var(--ink-2)", fontSize: "var(--text-xs)", margin: "var(--space-3) 0 0" }}>
+          Manage your businesses on your <Link to="/profile" style={{ color: "var(--accent)" }}>business profile</Link>.
+        </p>
+      )}
+    </fieldset>
+  );
 }
 
 function Section({ title, children }) {
