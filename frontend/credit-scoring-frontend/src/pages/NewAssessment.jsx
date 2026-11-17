@@ -413,6 +413,7 @@ function Section({ title, children }) {
 
 const controlStyle = {
   font: "inherit",
+  fontSize: "var(--text-base)",
   width: "100%",
   padding: "var(--space-2) var(--space-3)",
   border: "1px solid var(--line-strong)",

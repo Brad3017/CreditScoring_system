@@ -19,7 +19,7 @@ export default function LegacyTag({ record }) {
         border: "1px solid var(--line-strong)",
         borderRadius: 999,
         color: "var(--ink-2)",
-        fontSize: 11,
+        fontSize: "var(--text-sm)",
         fontWeight: 600,
         whiteSpace: "nowrap",
         verticalAlign: "middle",

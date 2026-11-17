@@ -45,7 +45,7 @@ export default function ShapChart({ values, legacyExplanation = [], learnLinks =
 
   const rows = showAll ? values : values.slice(0, TOP);
   // Wider label column when a "Learn why" link sits next to the factor name.
-  const labelCol = learnLinks ? "minmax(120px, 300px) 1fr" : "minmax(110px, 200px) 1fr";
+  const labelCol = learnLinks ? "minmax(8rem, 21rem) 1fr" : "minmax(7rem, 15rem) 1fr";
   const max = Math.max(...values.map((v) => Math.abs(v.value)), 1e-9);
   // Bars use at most 70% of each half so the value label always fits at the tip.
   const len = (v) => `${(Math.abs(v) / max) * 70}%`;

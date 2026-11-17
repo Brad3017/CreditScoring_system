@@ -25,6 +25,7 @@ export const cardTitle = {
 export const muted = { color: "var(--ink-2)", fontSize: "var(--text-xs)" };
 export const inputStyle = {
   font: "inherit",
+  fontSize: "var(--text-base)",
   padding: "var(--space-2) var(--space-3)",
   border: "1px solid var(--line-strong)",
   borderRadius: "var(--radius)",

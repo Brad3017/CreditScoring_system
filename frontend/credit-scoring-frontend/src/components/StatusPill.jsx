@@ -21,7 +21,7 @@ export default function StatusPill({ status = "pending" }) {
         padding: "2px var(--space-3)",
         border: `1px solid var(${s.token})`,
         borderRadius: 999,
-        fontSize: "var(--text-xs)",
+        fontSize: "var(--text-sm)",
         fontWeight: 600,
         color: `var(${s.token})`,
         whiteSpace: "nowrap",

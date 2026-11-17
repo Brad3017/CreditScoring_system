@@ -9,17 +9,21 @@ const SIDEBAR_LINE = "rgba(255,255,255,0.09)";
 const SIDEBAR_TEXT = "#c9d3cd";
 
 const css = `
-.sb-root{display:grid;grid-template-columns:256px minmax(0,1fr);height:100vh;background:var(--paper);color:var(--ink);font-family:var(--font-body)}
+.sb-root{display:grid;grid-template-columns:17.5rem minmax(0,1fr);height:100vh;background:var(--paper);color:var(--ink);font-family:var(--font-body)}
 .sb-side{background:${SIDEBAR};color:${SIDEBAR_TEXT};display:flex;flex-direction:column;justify-content:space-between;min-height:0;overflow-y:auto}
 .sb-item{display:flex;align-items:center;gap:var(--space-3);width:100%;padding:var(--space-3) var(--space-4);border:0;border-radius:var(--radius);background:transparent;color:${SIDEBAR_TEXT};font:inherit;font-weight:600;text-align:left;text-decoration:none;cursor:pointer;box-sizing:border-box}
 .sb-item:hover{background:rgba(255,255,255,0.07);color:#fff}
 .sb-item:focus-visible{outline:2px solid #fff;outline-offset:2px}
 .sb-item[aria-current="page"]{background:var(--accent-soft);color:#0a4541}
 .sb-main{overflow-y:auto;min-width:0}
+.sb-head{padding:var(--space-5) var(--space-8)}
+.sb-body{padding:var(--space-8)}
 @media (max-width: 820px){
   .sb-root{grid-template-columns:1fr;height:auto;min-height:100vh}
   .sb-side{flex-direction:column}
   .sb-main{overflow:visible}
+  .sb-head{padding:var(--space-4) var(--space-5)}
+  .sb-body{padding:var(--space-5)}
 }
 @media print{
   .sb-root{display:block;height:auto}
@@ -53,10 +57,10 @@ export default function Sidebar({ title, subtitle, user, actions, children, nav,
       <aside className="sb-side">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-6)", borderBottom: `1px solid ${SIDEBAR_LINE}` }}>
-            <div aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 20 }}>B</div>
+            <div aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: "var(--text-lg)" }}>B</div>
             <div>
               <div style={{ color: "#fff", fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "var(--text-lg)", lineHeight: 1.1 }}>BiasharaScore</div>
-              <div style={{ fontSize: 12, color: "#8fa098" }}>{brandNote}</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "#8fa098" }}>{brandNote}</div>
             </div>
           </div>
 
@@ -83,10 +87,10 @@ export default function Sidebar({ title, subtitle, user, actions, children, nav,
 
         <div style={{ padding: "var(--space-4)", borderTop: `1px solid ${SIDEBAR_LINE}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2)", minWidth: 0 }}>
-            <div aria-hidden="true" style={{ width: 36, height: 36, flex: "none", borderRadius: "50%", border: `1px solid ${SIDEBAR_LINE}`, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700, fontSize: 12 }}>{initials}</div>
+            <div aria-hidden="true" style={{ width: 36, height: 36, flex: "none", borderRadius: "50%", border: `1px solid ${SIDEBAR_LINE}`, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700, fontSize: "var(--text-xs)" }}>{initials}</div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ color: "#fff", fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.full_name || user?.email || roleLabel}</div>
-              <div style={{ fontSize: 12, color: "#8fa098" }}>{roleLabel}</div>
+              <div style={{ color: "#fff", fontWeight: 600, fontSize: "var(--text-sm)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.full_name || user?.email || roleLabel}</div>
+              <div style={{ fontSize: "var(--text-sm)", color: "#8fa098" }}>{roleLabel}</div>
             </div>
           </div>
           <button type="button" className="sb-item" onClick={logout} style={{ marginTop: "var(--space-2)", color: "#f0a999" }}>
@@ -96,14 +100,14 @@ export default function Sidebar({ title, subtitle, user, actions, children, nav,
       </aside>
 
       <div className="sb-main">
-        <header style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-4)", flexWrap: "wrap", padding: "var(--space-5) var(--space-8)", background: "var(--surface)", borderBottom: "1px solid var(--line-strong)" }}>
+        <header className="sb-head" style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-4)", flexWrap: "wrap", background: "var(--surface)", borderBottom: "1px solid var(--line-strong)" }}>
           <div style={{ minWidth: 0 }}>
             <h1 style={{ margin: 0, fontSize: "var(--text-xl)" }}>{title}</h1>
-            {subtitle && <p style={{ margin: "2px 0 0", color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>{subtitle}</p>}
+            {subtitle && <p style={{ margin: "2px 0 0", color: "var(--ink-2)", fontSize: "var(--text-sm)" }}>{subtitle}</p>}
           </div>
           <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>{actions}</div>
         </header>
-        <main style={{ padding: "var(--space-8)", maxWidth: 1240, margin: "0 auto", display: "grid", gap: "var(--space-6)", boxSizing: "border-box" }}>
+        <main className="sb-body" style={{ maxWidth: 1240, margin: "0 auto", display: "grid", gap: "var(--space-6)", boxSizing: "border-box" }}>
           {notice && (
             <p role="note" style={{ margin: 0, padding: "var(--space-3) var(--space-4)", border: "1px solid var(--line-strong)", borderRadius: "var(--radius)", background: "var(--accent-soft)", color: "var(--ink)", fontSize: "var(--text-sm)" }}>
               {notice}

@@ -180,7 +180,7 @@ export default function AdminModel() {
             <ChartCard title="Inputs" subtitle={`${d.features.length} features`}>
               <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
                 {d.features.map((f) => (
-                  <li key={f} style={{ padding: "2px var(--space-3)", border: "1px solid var(--line-strong)", borderRadius: 999, fontSize: "var(--text-xs)" }}>{f}</li>
+                  <li key={f} style={{ padding: "2px var(--space-3)", border: "1px solid var(--line-strong)", borderRadius: 999, fontSize: "var(--text-sm)" }}>{f}</li>
                 ))}
               </ul>
             </ChartCard>

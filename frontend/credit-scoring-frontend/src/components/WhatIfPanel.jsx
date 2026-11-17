@@ -20,6 +20,7 @@ const kes = (n) => (n == null ? "Not available" : `KES ${Math.round(Number(n)).t
 
 const controlStyle = {
   font: "inherit",
+  fontSize: "var(--text-base)",
   width: "100%",
   padding: "var(--space-2) var(--space-3)",
   border: "1px solid var(--line-strong)",

@@ -10,6 +10,7 @@ export default function BusinessFilter({ businesses, value, onChange, style }) {
         onChange={(e) => onChange(e.target.value)}
         style={{
           font: "inherit",
+          fontSize: "var(--text-base)",
           padding: "var(--space-2) var(--space-3)",
           border: "1px solid var(--line-strong)",
           borderRadius: "var(--radius)",

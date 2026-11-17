@@ -162,7 +162,7 @@ export default function MyAssessments() {
                           <td className="num" style={{ textAlign: "right", fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
                             {item.credit_score ?? "–"}
                           </td>
-                          <td style={{ fontSize: "var(--text-xs)", color: key ? `var(${RISK_TOKEN[key]})` : "var(--ink-2)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          <td style={{ fontSize: "var(--text-sm)", color: key ? `var(${RISK_TOKEN[key]})` : "var(--ink-2)", fontWeight: 600, whiteSpace: "nowrap" }}>
                             {key ? RISK_LABEL[key] : "–"}
                           </td>
                           <td style={{ textAlign: "right" }}>
@@ -193,6 +193,7 @@ export default function MyAssessments() {
 
 const inputStyle = {
   font: "inherit",
+  fontSize: "var(--text-base)",
   padding: "var(--space-2) var(--space-3)",
   border: "1px solid var(--line-strong)",
   borderRadius: "var(--radius)",

@@ -87,7 +87,7 @@ export default function AdminOverview() {
             <section style={card}><Empty>No assessments in this period yet.</Empty></section>
           ) : (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "var(--space-6)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "var(--space-6)" }}>
                 <ChartCard
                   title="Risk categories"
                   subtitle="How the model sorted applicants"
@@ -122,7 +122,7 @@ export default function AdminOverview() {
                 <Columns data={d.score_bins.map((b) => ({ label: String(b.from), value: b.count }))} />
               </ChartCard>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "var(--space-6)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "var(--space-6)" }}>
                 <ChartCard
                   title="Assessments by sector"
                   table={{ head: ["Sector", "Count", "Average score"], rows: d.sectors.map((s) => [s.name, s.count, s.avg_score]) }}

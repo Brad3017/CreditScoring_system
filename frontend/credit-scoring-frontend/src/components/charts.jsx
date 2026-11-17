@@ -47,18 +47,21 @@ export function BarList({ rows, format = (v) => v, max, color = "var(--accent)" 
         <li
           key={r.label}
           title={`${r.label}: ${format(r.value)}`}
-          style={{ display: "grid", gridTemplateColumns: "minmax(90px, 160px) 1fr auto", gap: "var(--space-3)", alignItems: "center" }}
+          style={{ display: "grid", gridTemplateColumns: "minmax(6rem, 12.5rem) 1fr auto", gap: "var(--space-3)", alignItems: "center" }}
         >
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
           <span style={{ background: "var(--line)", borderRadius: 4, height: 10, overflow: "hidden" }}>
             <span style={{ display: "block", width: `${Math.max(2, (r.value / top) * 100)}%`, height: "100%", background: r.color || color, borderRadius: 4 }} />
           </span>
-          <span className="num" style={{ fontWeight: 600, minWidth: 44, textAlign: "right" }}>{format(r.value)}</span>
+          <span className="num" style={{ fontWeight: 600, minWidth: "3rem", textAlign: "right" }}>{format(r.value)}</span>
         </li>
       ))}
     </ul>
   );
 }
+
+// Column labels truncate inside their column; the column's title tooltip carries the full text.
+const tick = { fontSize: "var(--text-xs)", lineHeight: 1.3, color: "var(--ink-2)", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 
 // Vertical columns for ordered buckets (score bins, months).
 export function Columns({ data, color = "var(--accent)", height = 160 }) {
@@ -66,12 +69,12 @@ export function Columns({ data, color = "var(--accent)", height = 160 }) {
   const top = Math.max(...data.map((d) => d.value), 1);
   return (
     <div role="img" aria-label="Column chart; see table view for exact values"
-      style={{ display: "flex", alignItems: "flex-end", gap: 2, height: height + 28, borderBottom: "1px solid var(--line-strong)" }}>
+      style={{ display: "flex", alignItems: "flex-end", gap: 2, height: `calc(${height}px + 3rem)`, borderBottom: "1px solid var(--line-strong)" }}>
       {data.map((d) => (
         <div key={d.label} title={`${d.label}: ${d.value}`} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", height: "100%" }}>
-          <span className="num" style={{ fontSize: "var(--text-xs)", color: "var(--ink-2)", marginBottom: 2 }}>{d.value || ""}</span>
+          <span className="num" style={{ ...tick, marginBottom: 2 }}>{d.value || ""}</span>
           <span style={{ width: "100%", maxWidth: 24, height: `${(d.value / top) * height}px`, minHeight: d.value ? 3 : 0, background: color, borderRadius: "4px 4px 0 0" }} />
-          <span style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 4, whiteSpace: "nowrap" }}>{d.label}</span>
+          <span style={{ ...tick, marginTop: 4 }}>{d.label}</span>
         </div>
       ))}
     </div>

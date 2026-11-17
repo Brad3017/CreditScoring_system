@@ -113,7 +113,7 @@ export default function AnalystDashboard() {
             borderRadius: "var(--radius)",
             border: "1px solid var(--line-strong)",
             background: "var(--surface)",
-            fontSize: "var(--text-xs)",
+            fontSize: "var(--text-sm)",
             fontWeight: 600,
           }}
         >
@@ -265,7 +265,7 @@ export default function AnalystDashboard() {
             </div>
 
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-base)" }}>
                 <thead>
                   <tr style={{ background: "var(--paper)", textAlign: "left" }}>
                     {["Business", "Assessment ID", "Submitted", "Score", "Risk", "Status", ""].map((h, i) => (
@@ -291,7 +291,7 @@ export default function AnalystDashboard() {
                         </td>
                         <td style={cell}>
                           {key ? (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", padding: "2px 10px", borderRadius: 999, background: `var(--risk-${key}-soft)`, color: `var(--risk-${key})`, fontSize: "var(--text-xs)", fontWeight: 700 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", padding: "2px 10px", borderRadius: 999, background: `var(--risk-${key}-soft)`, color: `var(--risk-${key})`, fontSize: "var(--text-sm)", fontWeight: 700 }}>
                               {BAND_LABEL[key]}
                             </span>
                           ) : (
@@ -305,7 +305,7 @@ export default function AnalystDashboard() {
                           <button
                             type="button"
                             className="btn btn-secondary"
-                            style={{ padding: "var(--space-1) var(--space-4)", fontSize: "var(--text-xs)" }}
+                            style={{ padding: "var(--space-1) var(--space-4)" }}
                             onClick={() => navigate(`/analyst/requests/${row.pk}`)}
                           >
                             {isDone ? "View" : "Review"}

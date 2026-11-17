@@ -10,7 +10,7 @@ const linkStyle = {
   border: 0,
   padding: 0,
   font: "inherit",
-  fontSize: "var(--text-xs)",
+  fontSize: "var(--text-sm)",
   fontWeight: 600,
   color: "var(--accent)",
   textDecoration: "underline",

@@ -32,13 +32,17 @@
   /* Type */
   --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Newsreader", Georgia, "Times New Roman", serif;
-  --text-xs: 0.8125rem;
-  --text-sm: 0.9375rem;
-  --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.625rem;
-  --text-2xl: 2.25rem;
-  --text-score: 4.75rem;
+  /* Type scale in rem (1rem = 16px at the browser default), so browser zoom, the browser's
+     text-size setting still scale it. The root is fixed at 112.5% (1rem = 18px at the browser
+     default), so the px values below are at that root. Nothing below 15.75px. */
+  --text-xs: 0.875rem;    /* 15.75px: captions, table headers, chart labels, helper text */
+  --text-sm: 0.9375rem;   /* 16.9px: secondary text, pills, nav sublabels */
+  --text-base: 1.0625rem; /* 19.1px: body, form inputs, table cells, buttons */
+  --text-lg: 1.25rem;     /* 22.5px: panel titles */
+  --text-xl: 1.75rem;     /* 31.5px: page titles */
+  --text-2xl: 2.25rem;    /* 40.5px: big numbers */
+  --text-score: 4.75rem;  /* 85.5px: the credit score */
+  --leading-body: 1.6;
 
   /* Space and shape */
   --space-1: 0.25rem;
@@ -75,14 +79,35 @@
   --shadow: none;
 }
 
+/* Fixed app-wide text size: 112.5% of the browser's setting (what the former "A+" option applied).
+   A percentage keeps the reader's own browser text size in effect. Applies to every page: owner,
+   Login/Signup and the analyst/admin areas. Never set the root to a token: a rem value on <html>
+   would be relative to the browser default, not to this. */
+html {
+  font-size: 112.5%;
+}
+
 html,
 body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: var(--text-sm);
-  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+}
+
+/* Form controls use the body size, not the browser default (13.33px). */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: 1.4;
 }
 
 h1,
@@ -286,23 +311,36 @@ html, body { margin: 0; }
 
 /* ---------- Phase 2B layout: owner shell, page, panels, tables, forms ---------- */
 
-/* B1: full-width sticky top bar with a wider inner container */
+/* B1: full-width sticky top bar. Three grid columns, brand | nav | account, with a fixed gap:
+   the nav column is minmax(0, 1fr) and scrolls inside itself, so nothing can overlap. */
 .app-header { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--line-strong); }
-.app-header-inner { max-width: 1440px; margin: 0 auto; padding: 0 var(--space-8); display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: var(--space-8); }
+.app-header-inner { max-width: 1440px; margin: 0 auto; padding: 0 var(--space-8); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-8); }
 .app-brand { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; color: var(--ink); text-decoration: none; white-space: nowrap; }
-.app-brand-mark { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #ffffff; font-size: 1.05rem; }
-.app-nav { display: flex; justify-content: flex-start; align-items: stretch; gap: var(--space-6); height: 64px; min-width: 0; }
-.app-nav a { display: flex; align-items: center; color: var(--ink-2); font-weight: 500; text-decoration: none; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.app-brand-mark { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #ffffff; font-size: 1.05rem; }
+.app-nav { display: flex; justify-content: flex-start; align-items: stretch; gap: var(--space-6); height: 4rem; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+/* Equal top/bottom borders keep the label centred; the bottom one is the active underline. */
+.app-nav a { flex: none; display: flex; align-items: center; color: var(--ink-2); font-weight: 500; text-decoration: none; white-space: nowrap; border-top: 2px solid transparent; border-bottom: 2px solid transparent; }
 .app-nav a:hover { color: var(--ink); }
 .app-nav a.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
-.app-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.app-user { display: flex; align-items: center; gap: var(--space-4); min-width: 0; }
+.app-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Account button and menu */
+.app-account { position: relative; }
+.app-account-btn { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 16rem; padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1); border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--ink); font-weight: 600; white-space: nowrap; cursor: pointer; }
+.app-account-btn:hover, .app-account-btn[aria-expanded="true"] { background: var(--paper); border-color: var(--line-strong); }
+.app-account-name { min-width: 0; max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
+.app-account-chevron { flex: none; color: var(--ink-2); transition: transform 150ms ease; }
+.app-account-btn[aria-expanded="true"] .app-account-chevron { transform: rotate(180deg); }
 .app-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 600; font-size: var(--text-xs); }
-.app-user-text { min-width: 0; max-width: 220px; font-size: var(--text-xs); line-height: 1.3; }
-.app-user-text > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app-user-name { font-weight: 600; }
-.app-user-email { color: var(--ink-2); }
-.app-divider { width: 1px; align-self: stretch; margin: var(--space-4) 0; background: var(--line); }
+.app-menu { position: absolute; right: 0; top: calc(100% + var(--space-2)); z-index: 20; min-width: 16rem; max-width: min(22rem, calc(100vw - 2rem)); padding: var(--space-2); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(23, 32, 28, 0.12); }
+.app-menu-who { padding: var(--space-2) var(--space-3) var(--space-3); margin-bottom: var(--space-2); border-bottom: 1px solid var(--line); }
+.app-menu-name { font-weight: 600; overflow-wrap: anywhere; }
+.app-menu-email { color: var(--ink-2); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.app-menu-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius); background: transparent; color: var(--ink); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.app-menu-item:hover, .app-menu-item:focus-visible { background: var(--accent-soft); }
+.app-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.app-menu-item[aria-current="page"] { font-weight: 600; }
+.app-menu-signout { color: var(--risk-high); }
 
 /* B2: page width and spacing */
 .app-main { max-width: 1320px; margin: 0 auto; padding: var(--space-8); display: grid; gap: var(--space-6); min-width: 0; }
@@ -325,19 +363,16 @@ html, body { margin: 0; }
 .form-group > legend { padding: 0 var(--space-2); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; }
 input:not([type="checkbox"]):not([type="radio"]), select, textarea { border: 1px solid var(--line-strong); border-radius: var(--radius); }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); align-items: stretch; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--space-4); align-items: stretch; }
 .stat { height: 100%; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: var(--space-5); min-width: 0; }
 
 @media (max-width: 1100px) {
-  .app-header-inner { padding: 0 var(--space-5); column-gap: var(--space-5); }
+  .app-header-inner { padding: 0 var(--space-5); column-gap: var(--space-6); }
 }
+/* Below 900px: avatar only in the account button, nav on its own scrollable row under the brand. */
 @media (max-width: 900px) {
-  .app-header-inner { grid-template-columns: 1fr auto; row-gap: 0; padding-top: var(--space-3); }
-  .app-nav { grid-column: 1 / -1; grid-row: 2; height: 48px; overflow-x: auto; scrollbar-width: thin; }
-  .app-user-email { display: none; }
-  .app-user-text { max-width: 140px; }
+  .app-header-inner { grid-template-columns: minmax(0, 1fr) auto; padding-top: var(--space-2); }
+  .app-nav { grid-column: 1 / -1; grid-row: 2; height: 3rem; }
+  .app-account-name { display: none; }
   .app-main { padding: var(--space-5); }
-}
-@media (max-width: 480px) {
-  .app-user-text, .app-divider { display: none; }
 }

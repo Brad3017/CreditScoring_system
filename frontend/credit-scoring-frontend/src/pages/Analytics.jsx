@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import LoadError from "../components/LoadError";
@@ -41,8 +41,21 @@ function Stat({ label, children, hint }) {
 const big = { fontFamily: "var(--font-display)", fontSize: "var(--text-2xl)", lineHeight: 1.1 };
 
 // Line chart of score per assessment, drawn over the three risk bands.
+// The viewBox matches the rendered width (1 unit = 1 CSS px), so the labels keep their token size
+// instead of shrinking with the chart on narrow screens.
 function ScoreTrend({ points }) {
-  const W = 640, H = 250, L = 44, R = 20, T = 16, B = 34;
+  const box = useRef(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(260, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Room for the y labels and the date labels scales with the root font size.
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const H = 260, L = Math.round(3.25 * rem), R = Math.round(2.75 * rem), T = Math.round(1.5 * rem), B = Math.round(2.5 * rem);
   const y = (v) => T + ((850 - v) / 550) * (H - T - B);
   const x = (i) => (points.length === 1 ? (L + W - R) / 2 : L + (i / (points.length - 1)) * (W - L - R));
   const bands = [
@@ -51,36 +64,42 @@ function ScoreTrend({ points }) {
     { from: 300, to: 500, fill: "var(--risk-high-soft)" },
   ];
   const path = points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.score)}`).join(" ");
-  const labelEvery = Math.ceil(points.length / 6);
+  // One date label per ~7rem of plot width, counted back from the latest point so the latest
+  // date is always shown and labels never overlap. Every point keeps its date in the tooltip.
+  const maxLabels = Math.max(2, Math.floor((W - L - R) / (7 * rem)));
+  const labelEvery = Math.ceil(points.length / maxLabels);
+  const small = { fontSize: "var(--text-xs)" };
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img"
-      aria-label={`Credit score for each assessment: ${points.map((p) => `${p.label} ${p.score}`).join(", ")}`}
-      style={{ display: "block", maxHeight: 300 }}>
-      {bands.map((b) => (
-        <rect key={b.from} x={L} y={y(b.to)} width={W - L - R} height={y(b.from) - y(b.to)} fill={b.fill} opacity="0.7" />
-      ))}
-      {[300, 500, 700, 850].map((t) => (
-        <g key={t}>
-          <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="var(--line-strong)" strokeWidth="1" />
-          <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--ink-2)">{t}</text>
-        </g>
-      ))}
-      {points.length > 1 && <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
-      {points.map((p, i) => (
-        <g key={p.id}>
-          <circle cx={x(i)} cy={y(p.score)} r="5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2">
-            <title>{`${p.label}: ${p.score}`}</title>
-          </circle>
-          {i === points.length - 1 && (
-            <text x={x(i)} y={y(p.score) - 12} textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--ink)">{p.score}</text>
-          )}
-          {(i % labelEvery === 0 || i === points.length - 1) && (
-            <text x={x(i)} y={H - 10} textAnchor="middle" fontSize="11" fill="var(--ink-2)">{p.label}</text>
-          )}
-        </g>
-      ))}
-    </svg>
+    <div ref={box}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img"
+        aria-label={`Credit score for each assessment: ${points.map((p) => `${p.label} ${p.score}`).join(", ")}`}
+        style={{ display: "block", overflow: "visible" }}>
+        {bands.map((b) => (
+          <rect key={b.from} x={L} y={y(b.to)} width={W - L - R} height={y(b.from) - y(b.to)} fill={b.fill} opacity="0.7" />
+        ))}
+        {[300, 500, 700, 850].map((t) => (
+          <g key={t}>
+            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="var(--line-strong)" strokeWidth="1" />
+            <text x={L - 8} y={y(t)} dominantBaseline="middle" textAnchor="end" style={small} fill="var(--ink-2)">{t}</text>
+          </g>
+        ))}
+        {points.length > 1 && <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+        {points.map((p, i) => (
+          <g key={p.id}>
+            <circle cx={x(i)} cy={y(p.score)} r="5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2">
+              <title>{`${p.label}: ${p.score}`}</title>
+            </circle>
+            {i === points.length - 1 && (
+              <text x={x(i)} y={y(p.score) - 12} textAnchor="middle" style={{ fontSize: "var(--text-sm)" }} fontWeight="600" fill="var(--ink)">{p.score}</text>
+            )}
+            {(points.length - 1 - i) % labelEvery === 0 && (
+              <text x={x(i)} y={H - 10} textAnchor="middle" style={small} fill="var(--ink-2)">{p.label}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
 

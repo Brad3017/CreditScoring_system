@@ -68,6 +68,7 @@ export const labelStyle = {
 
 export const inputStyle = {
   font: "inherit",
+  fontSize: "var(--text-base)",
   width: "100%",
   boxSizing: "border-box",
   padding: "var(--space-3) var(--space-4)",
@@ -121,7 +122,7 @@ export function PasswordField({ label, name, hint, ...rest }) {
             border: 0,
             color: "var(--accent)",
             fontWeight: 600,
-            fontSize: "var(--text-xs)",
+            fontSize: "var(--text-sm)",
             cursor: "pointer",
             padding: "var(--space-1) var(--space-2)",
           }}
