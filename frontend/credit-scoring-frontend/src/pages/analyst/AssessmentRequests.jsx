@@ -4,11 +4,17 @@ import AnalystLayout from "../../components/AnalystLayout";
 import StatusPill from "../../components/StatusPill";
 import { riskKeyFromCategory } from "../../components/RiskScale";
 import LegacyTag from "../../components/LegacyTag";
+import ValidityBadge from "../../components/ValidityBadge";
+import { validityProps } from "../../lib/validity";
 import { card, muted, inputStyle, th, td } from "../../components/analystUi";
 import { getCurrentUser, fetchAllAssessments } from "../../lib/api";
 
 const RISK_LABEL = { low: "Low risk", moderate: "Moderate", high: "High risk" };
 const RISK_TOKEN = { low: "--risk-low", moderate: "--risk-moderate", high: "--risk-high" };
+// Valid scores first (they can be approved), then expired, then superseded. Within a group the
+// server's order (newest first) is kept: Array.prototype.sort is stable.
+const VALIDITY_RANK = { valid: 0, expired: 1, superseded: 2 };
+const validityRank = (r) => VALIDITY_RANK[r.validity_status] ?? 0;
 
 export default function AssessmentRequests() {
   const navigate = useNavigate();
@@ -47,7 +53,7 @@ export default function AssessmentRequests() {
       if (risk !== "all" && riskKeyFromCategory(r.risk_category) !== risk) return false;
       if (q && !`${r.business_name} ${r.id} ${r.county} ${r.sector}`.toLowerCase().includes(q)) return false;
       return true;
-    });
+    }).sort((a, b) => validityRank(a) - validityRank(b));
   }, [rows, status, risk, query]);
 
   const tabs = [
@@ -102,7 +108,7 @@ export default function AssessmentRequests() {
                 <tr>
                   <th style={th}>Business</th><th style={th}>Submitted</th>
                   <th style={th}>Score</th><th style={th}>Risk</th>
-                  <th style={th}>Status</th><th style={th}><span className="sr-only">Action</span></th>
+                  <th style={th}>Status</th><th style={th}>Validity</th><th style={th}><span className="sr-only">Action</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -118,6 +124,7 @@ export default function AssessmentRequests() {
                       <td style={td}><span className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>{r.credit_score}</span></td>
                       <td style={{ ...td, color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
                       <td style={td}><StatusPill status={r.review_status} /></td>
+                      <td style={td}><ValidityBadge {...validityProps(r)} /></td>
                       <td style={{ ...td, textAlign: "right" }}>
                         <button type="button" className="btn btn-secondary" onClick={() => navigate(`/analyst/requests/${r.pk}`)}>
                           {r.review_status === "pending" ? "Review" : "Open"}

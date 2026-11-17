@@ -57,6 +57,21 @@ CreditScoringSystem/
 | See backend logs | `docker compose logs -f backend` |
 | Rebuild after code changes | `docker compose up --build` |
 | Open a Django shell | `docker compose exec backend python manage.py shell` |
+| Expire a score now (demo) | `docker compose exec backend python manage.py set_validity <assessment_id> --days -1` |
+| Renew a score for 30 days (demo) | `docker compose exec backend python manage.py set_validity <assessment_id> --days 30` |
+
+## Score validity
+
+Every credit score is valid for `SCORE_VALIDITY_DAYS` days (default 30, set in `backend/.env`).
+The date is stored on each assessment when it is created (`valid_until`), so changing the setting
+later does not change existing scores. After that date a score is **Expired**; when a newer
+assessment exists for the same business, the older one is **Superseded**. Neither can be approved
+(declining or asking for more information still works), and the decision letter and printed report
+show "Valid until …" plus an EXPIRED or SUPERSEDED watermark when the score is no longer valid.
+
+`set_validity` is for demonstrations only. It sets `valid_until` to now plus the given number of days
+(negative expires the score) and prints the assessment id, business name and the new date.
+Nothing else on the record changes.
 
 ## If something fails
 

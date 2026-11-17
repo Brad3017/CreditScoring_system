@@ -7,6 +7,9 @@ import ShapChart from "../../components/ShapChart";
 import LegacyTag from "../../components/LegacyTag";
 import AffordabilityPanel from "../../components/AffordabilityPanel";
 import DecisionLetterButton from "../../components/DecisionLetterButton";
+import ValidityBadge from "../../components/ValidityBadge";
+import { validityProps, isScoreValid } from "../../lib/validity";
+import { t } from "../../lib/i18n";
 import { card, cardHead, cardTitle, muted, inputStyle, kes, fmtDateTime } from "../../components/analystUi";
 import { getCurrentUser, fetchAssessmentDetail, reviewAssessment } from "../../lib/api";
 
@@ -25,6 +28,8 @@ export default function AssessmentReview() {
   const [user, setUser] = useState(null);
   const [a, setA] = useState(null);
   const [error, setError] = useState("");
+  // Errors from recording a decision, shown next to the decision buttons.
+  const [decisionError, setDecisionError] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState("");
@@ -43,13 +48,19 @@ export default function AssessmentReview() {
   }, [pk]);
 
   async function decide(decision) {
-    setError(""); setSaved(""); setSaving(true);
+    setError(""); setDecisionError(""); setSaved(""); setSaving(true);
     try {
       const updated = await reviewAssessment(pk, decision, note);
       setA(updated);
       setSaved("Decision saved. The applicant can now see it.");
     } catch (e) {
-      setError(e.message);
+      setDecisionError(e.message);
+      // Approval refused because the score expired (or was superseded) while this page was open:
+      // show the new validity, which also disables Approve.
+      const status = e.fields?.validity_status;
+      if (status && status !== "valid") {
+        setA((prev) => ({ ...prev, validity_status: status, valid_until: e.fields.valid_until || prev.valid_until, days_remaining: null }));
+      }
     } finally {
       setSaving(false);
     }
@@ -57,6 +68,7 @@ export default function AssessmentReview() {
 
   const r = a?.request;
   const needsNote = !note.trim() || note.trim().length < 5;
+  const canApprove = isScoreValid(a);
 
   return (
     <AnalystLayout
@@ -74,7 +86,10 @@ export default function AssessmentReview() {
             <section style={card}>
               <div style={cardHead}>
                 <h2 style={cardTitle}>Model result</h2>
-                <StatusPill status={a.review_status} />
+                <span style={{ display: "inline-flex", gap: "var(--space-2)", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <ValidityBadge {...validityProps(a)} />
+                  <StatusPill status={a.review_status} />
+                </span>
               </div>
               <RiskScale score={a.credit_score} riskCategory={a.risk_category} isLegacy={a.is_legacy} modelVersion={a.model_version} />
               <dl style={{ margin: "var(--space-5) 0 0" }}>
@@ -140,10 +155,17 @@ export default function AssessmentReview() {
             </p>
 
             <div style={{ display: "grid", gap: "var(--space-3)", marginTop: "var(--space-4)" }}>
-              <button type="button" className="btn btn-primary" disabled={saving} onClick={() => decide("approved")}>Approve</button>
+              <button type="button" className="btn btn-primary" disabled={saving || !canApprove}
+                aria-describedby={canApprove ? undefined : "approve-blocked"} onClick={() => decide("approved")}>Approve</button>
+              {!canApprove && (
+                <p id="approve-blocked" style={{ ...muted, margin: 0, color: "var(--risk-high)", fontWeight: 600 }}>
+                  {t("validity.approveBlocked")}
+                </p>
+              )}
               <button type="button" className="btn btn-secondary" disabled={saving || needsNote} onClick={() => decide("referred")}>Ask for more information</button>
               <button type="button" className="btn btn-secondary" disabled={saving || needsNote} onClick={() => decide("declined")}>Decline</button>
             </div>
+            {decisionError && <p role="alert" style={{ color: "var(--risk-high)", marginBottom: 0 }}>{decisionError}</p>}
             {saved && <p role="status" style={{ color: "var(--risk-low)", marginBottom: 0 }}>{saved}</p>}
 
             {/* The letter the applicant receives: built from the latest saved decision, never the unsaved note. */}

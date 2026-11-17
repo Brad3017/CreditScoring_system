@@ -18,6 +18,7 @@ from reportlab.platypus import (
 )
 
 from .services import SCORE_MAX, SCORE_MIN
+from .validity import EXPIRED, SUPERSEDED, get_validity, short_date
 
 # The app's accent: frontend/credit-scoring-frontend/src/styles/tokens.css, --accent (light theme).
 # Copied here because the frontend folder is not in the backend image; a test keeps the two in step.
@@ -56,6 +57,17 @@ CHANGEABLE = (
 )
 
 DECIDED = ("approved", "declined", "referred")
+
+# Score validity (scoring/validity.py). A letter for a score that is no longer valid can still be
+# downloaded, but carries a diagonal watermark on every page and a one-line note at the top.
+INVALID_MARK = {
+    EXPIRED: ("EXPIRED", "This score is no longer valid. A new assessment is required."),
+    SUPERSEDED: ("SUPERSEDED", "A newer assessment exists for this business."),
+}
+WATERMARK_COLOR = colors.HexColor("#d9534f")  # light red once drawn at low opacity
+NOTE_BG = colors.HexColor("#fbe9e7")
+NOTE_LINE = colors.HexColor("#e2a69c")
+NOTE_TEXT = colors.HexColor("#9c3a2b")  # --risk-high in tokens.css
 
 
 # ---------------------------------------------------------------------------
@@ -179,10 +191,16 @@ def _styles(body_size):
         "bullet": ParagraphStyle("bullet", parent=base, leftIndent=12, bulletIndent=2),
         "small": ParagraphStyle("small", parent=base, fontSize=body_size - 1.5, leading=(body_size - 1.5) * 1.35,
                                 textColor=GREY),
+        "invalid": ParagraphStyle("invalid", parent=base, fontName="Helvetica-Bold", textColor=NOTE_TEXT),
     }
 
 
-def _story(assessment, s):
+def valid_until_line(validity):
+    """'Valid until: 17 Dec 2026' (Nairobi time), or None for a record without a date."""
+    return f"Valid until: {short_date(validity['valid_until'])}" if validity["valid_until"] else None
+
+
+def _story(assessment, s, validity):
     r = assessment.request
     user = r.user
     e = escape
@@ -194,6 +212,17 @@ def _story(assessment, s):
         HRFlowable(width="100%", thickness=0.8, color=ACCENT, spaceBefore=0, spaceAfter=0),
         gap(0.35),
     ]
+
+    mark = INVALID_MARK.get(validity["status"])
+    if mark:
+        note = Table([[Paragraph(e(mark[1]), s["invalid"])]], colWidths=["100%"])
+        note.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), NOTE_BG),
+            ("BOX", (0, 0), (-1, -1), 0.5, NOTE_LINE),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story += [note, gap(0.25)]
 
     banner = Table([[Paragraph(e(DEMO_BANNER), s["banner"])]], colWidths=["100%"])
     banner.setStyle(TableStyle([
@@ -227,6 +256,11 @@ def _story(assessment, s):
             f"Assessed on {e(long_date(assessment.created_at))}",
             s["body"],
         ),
+    ]
+    line = valid_until_line(validity)
+    if line:
+        story.append(Paragraph(f"<b>{e(line)}</b>", s["body"]))
+    story += [
         Paragraph(
             f"Scores run from {SCORE_MIN} to {SCORE_MAX}. Higher scores mean lower assessed risk.", s["body"]
         ),
@@ -263,14 +297,30 @@ def _footer_text(assessment):
             f"Assessment ASSESS-{assessment.id}")
 
 
+def _draw_watermark(canvas, text, width, height):
+    """A large, light, diagonal word across the page. Drawn before the content, so text stays readable."""
+    canvas.saveState()
+    canvas.setFillColor(WATERMARK_COLOR)
+    canvas.setFillAlpha(0.14)
+    canvas.setFont("Helvetica-Bold", 92 if len(text) <= 8 else 74)
+    canvas.translate(width / 2, height / 2)
+    canvas.rotate(45)
+    canvas.drawCentredString(0, -30, text)
+    canvas.restoreState()
+
+
 def _render(assessment, body_size):
     buf = BytesIO()
+    validity = get_validity(assessment)
+    watermark = INVALID_MARK.get(validity["status"], (None,))[0]
     width, height = A4
     frame = Frame(MARGIN, MARGIN + FOOTER_SPACE, width - 2 * MARGIN, height - 2 * MARGIN - FOOTER_SPACE,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="body")
     footer = _footer_text(assessment)
 
     def draw_footer(canvas, _doc):
+        if watermark:
+            _draw_watermark(canvas, watermark, width, height)
         canvas.saveState()
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(GREY)
@@ -286,7 +336,7 @@ def _render(assessment, body_size):
     doc.addPageTemplates([PageTemplate(id="letter", frames=[frame], onPage=draw_footer)])
     # KeepInFrame(shrink) keeps everything on ONE page: if the content were ever taller than the frame,
     # it is scaled down instead of flowing onto a second page.
-    story = _story(assessment, _styles(body_size))
+    story = _story(assessment, _styles(body_size), validity)
     doc.build([KeepInFrame(frame._width, frame._height, story, mode="shrink")])
     return buf.getvalue()
 

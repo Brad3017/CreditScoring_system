@@ -10,19 +10,32 @@ import ImprovementTips from "../components/ImprovementTips";
 import WhatIfPanel from "../components/WhatIfPanel";
 import LegacyTag from "../components/LegacyTag";
 import DecisionLetterButton from "../components/DecisionLetterButton";
-import { getCurrentUser } from "../lib/api";
+import ValidityBadge from "../components/ValidityBadge";
+import { validityProps } from "../lib/validity";
+import { fetchMyAssessments, getCurrentUser } from "../lib/api";
+import { t, shortDate } from "../lib/i18n";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
 
 export default function AssessmentResultPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const assessment = location.state?.assessment;
+  const snapshot = location.state?.assessment;
   const [user, setUser] = useState(null);
+  // The owner's assessments, fetched fresh: the report arrives as a navigation snapshot (kept across
+  // reloads), so its validity may be out of date, and the newest assessment of the business is needed
+  // for "View latest assessment".
+  const [mine, setMine] = useState(null);
 
   useEffect(() => {
     getCurrentUser().then(setUser).catch(() => {});
+    fetchMyAssessments().then((list) => setMine(Array.isArray(list) ? list : [])).catch(() => setMine([]));
   }, []);
+
+  const fresh = snapshot && mine ? mine.find((a) => a.pk === snapshot.pk) : null;
+  const assessment = snapshot && fresh
+    ? { ...snapshot, validity_status: fresh.validity_status, valid_until: fresh.valid_until, days_remaining: fresh.days_remaining }
+    : snapshot;
 
   if (!assessment) {
     return (
@@ -41,6 +54,14 @@ export default function AssessmentResultPage() {
   }
 
   const outOfRange = assessment.out_of_range || [];
+  const validity = assessment.validity_status;
+  const invalid = validity === "expired" || validity === "superseded";
+  // Newest assessment of the same business (the list is newest first).
+  const latest = validity === "superseded" && assessment.business_id != null && mine
+    ? mine.find((a) => a.business_id === assessment.business_id && a.pk !== assessment.pk) || null
+    : null;
+  const watermark = validity === "expired" ? t("validity.watermarkExpired")
+    : validity === "superseded" ? t("validity.watermarkSuperseded") : null;
 
   return (
     <AppShell user={user}>
@@ -55,10 +76,44 @@ export default function AssessmentResultPage() {
         </div>
       </header>
 
+      {/* Printed report: the same diagonal watermark as the PDF letter, on every page (print only). */}
+      {watermark && <div className="print-watermark" aria-hidden="true">{watermark}</div>}
+
+      {invalid && (
+        <section className="panel validity-banner" role="status" aria-labelledby="validity-heading">
+          <div>
+            <h2 id="validity-heading" style={{ margin: 0, fontSize: "var(--text-lg)" }}>{t("validity.banner")}</h2>
+            <p style={{ margin: "var(--space-1) 0 0", color: "var(--ink-2)" }}>
+              {t(validity === "expired" ? "validity.noteExpired" : "validity.noteSuperseded")}
+            </p>
+          </div>
+          <div className="no-print">
+            {latest ? (
+              <button type="button" className="btn btn-primary" onClick={() => navigate("/assessment/results", { state: { assessment: latest } })}>
+                {t("validity.viewLatest")}
+              </button>
+            ) : (
+              <button type="button" className="btn btn-primary"
+                onClick={() => navigate(assessment.business_id != null ? `/assessment/new?business=${assessment.business_id}` : "/assessment/new")}>
+                {t("validity.reassess")}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+
       <div className="split">
         <section className="panel" aria-labelledby="score-heading">
-          <div className="panel-head"><h2 id="score-heading">Credit score</h2></div>
+          <div className="panel-head">
+            <h2 id="score-heading">Credit score</h2>
+            <ValidityBadge {...validityProps(assessment)} />
+          </div>
           <RiskScale score={assessment.credit_score} riskCategory={assessment.risk_category} isLegacy={assessment.is_legacy} modelVersion={assessment.model_version} />
+          {assessment.valid_until && (
+            <p style={{ margin: "var(--space-4) 0 0", fontWeight: 600 }}>
+              {t("validity.validUntil", { date: shortDate(assessment.valid_until) })}
+            </p>
+          )}
           <OutOfRangeNotice notes={outOfRange} />
         </section>
 

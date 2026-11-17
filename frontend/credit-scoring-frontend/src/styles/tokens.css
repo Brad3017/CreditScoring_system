@@ -376,3 +376,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   .app-account-name { display: none; }
   .app-main { padding: var(--space-5); }
 }
+
+/* Score validity: banner on an expired / superseded report, and its print-only watermark. */
+.validity-banner { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); flex-wrap: wrap; border-color: var(--risk-high); background: var(--risk-high-soft); }
+.print-watermark { display: none; }
+@media print {
+  /* position: fixed repeats the element on every printed page. */
+  .print-watermark { display: block; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-family: var(--font-body); font-size: 6rem; font-weight: 700; letter-spacing: 0.05em; white-space: nowrap; color: rgba(217, 83, 79, 0.16); pointer-events: none; z-index: 0; }
+}

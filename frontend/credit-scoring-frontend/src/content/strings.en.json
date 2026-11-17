@@ -1,0 +1,15 @@
+{
+  "validity.valid": "Valid · expires in {n} days",
+  "validity.expiring": "Expires in {n} days",
+  "validity.expired": "Expired on {date}",
+  "validity.superseded": "Superseded",
+  "validity.validUntil": "Valid until {date}",
+  "validity.banner": "This score is no longer valid.",
+  "validity.reassess": "Re-assess",
+  "validity.viewLatest": "View latest assessment",
+  "validity.approveBlocked": "Score expired — owner must re-assess",
+  "validity.watermarkExpired": "EXPIRED",
+  "validity.watermarkSuperseded": "SUPERSEDED",
+  "validity.noteExpired": "This score is no longer valid. A new assessment is required.",
+  "validity.noteSuperseded": "A newer assessment exists for this business."
+}

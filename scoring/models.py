@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 # KRA PIN: the letter P, exactly 9 digits, then one letter. Example: P051234567X.
 KRA_PIN_PATTERN = r"^P\d{9}[A-Z]$"
@@ -166,6 +169,22 @@ class CreditAssessment(models.Model):
         related_name="reviewed_assessments",
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # ---- Score validity ----
+    # Set once, when the assessment is created: created_at + settings.SCORE_VALIDITY_DAYS. Stored, never
+    # recomputed from the setting, so changing the setting later does not change existing records.
+    # Status (valid / expired / superseded) is derived from this in scoring/validity.py.
+    valid_until = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    def save(self, *args, **kwargs):
+        if self.valid_until is None:
+            # created_at (auto_now_add) is only filled in by super().save(); use now() on the first save.
+            start = self.created_at or timezone.now()
+            self.valid_until = start + timedelta(days=settings.SCORE_VALIDITY_DAYS)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "valid_until" not in update_fields:
+                kwargs["update_fields"] = [*update_fields, "valid_until"]
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Assessment #{self.id} - Score: {self.credit_score} ({self.risk_category})"

@@ -7,6 +7,8 @@ import LegacyTag from "../components/LegacyTag";
 import StatusPill from "../components/StatusPill";
 import DecisionLetterButton from "../components/DecisionLetterButton";
 import BusinessFilter from "../components/BusinessFilter";
+import ValidityBadge from "../components/ValidityBadge";
+import { validityProps } from "../lib/validity";
 import { getCurrentUser, fetchMyAssessments, fetchBusinesses } from "../lib/api";
 import { matchesBusiness } from "../lib/businesses";
 
@@ -142,7 +144,7 @@ export default function MyAssessments() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Business</th><th>Date</th><th>Review</th>
+                      <th>Business</th><th>Date</th><th>Review</th><th>Validity</th>
                       <th style={{ textAlign: "right" }}>Score</th><th>Risk</th><th></th>
                     </tr>
                   </thead>
@@ -159,6 +161,7 @@ export default function MyAssessments() {
                           </td>
                           <td style={{ whiteSpace: "nowrap" }}>{item.created_at || "Recent"}</td>
                           <td><StatusPill status={item.review_status || "pending"} /></td>
+                          <td><ValidityBadge {...validityProps(item)} /></td>
                           <td className="num" style={{ textAlign: "right", fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>
                             {item.credit_score ?? "–"}
                           </td>

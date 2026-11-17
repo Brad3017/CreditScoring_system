@@ -8,6 +8,7 @@ from .models import (
     KRA_PIN_LOCKED_MESSAGE, normalise_kra_pin,
 )
 from . import services
+from .validity import get_validity
 
 User = get_user_model()
 
@@ -179,8 +180,20 @@ class CreditRequestSerializer(serializers.ModelSerializer):
 class CreditAssessmentSerializer(serializers.ModelSerializer):
     # Optionally embed the full request details when viewing an assessment
     request_details = CreditRequestSerializer(source="request", read_only=True)
+    # Validity (scoring/validity.py). Uses the is_superseded annotation when the queryset has it.
+    validity_status = serializers.SerializerMethodField()
+    days_remaining = serializers.SerializerMethodField()
 
     class Meta:
         model = CreditAssessment
         fields = "__all__"
-        read_only_fields = ["id", "created_at"]        
+        read_only_fields = ["id", "created_at", "valid_until"]
+
+    def _validity(self, obj):
+        return get_validity(obj, getattr(obj, "is_superseded", None))
+
+    def get_validity_status(self, obj):
+        return self._validity(obj)["status"]
+
+    def get_days_remaining(self, obj):
+        return self._validity(obj)["days_remaining"]        

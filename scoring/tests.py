@@ -4,6 +4,7 @@ Run with: python manage.py test scoring  (needs the test tools: pip install -r r
 """
 import json
 import re
+from datetime import timedelta
 from io import BytesIO
 
 import numpy as np
@@ -12,7 +13,7 @@ import xgboost as xgb
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth import get_user_model
-from django.test import TestCase, SimpleTestCase
+from django.test import TestCase, SimpleTestCase, override_settings
 from django.utils import timezone
 from pypdf import PdfReader  # test-only: requirements-dev.txt
 from rest_framework.test import APIClient
@@ -20,6 +21,7 @@ from rest_framework.test import APIClient
 from . import letters, services
 from .models import BusinessProfile, CreditAssessment, CreditRequest, LetterDownload
 from .serializers import CreditRequestSerializer
+from .validity import get_validity, short_date, with_superseded
 from .views import LETTER_PENDING_MESSAGE
 
 User = get_user_model()
@@ -1124,3 +1126,194 @@ class DecisionLetterTests(TestCase):
             self.skipTest("frontend/ is not in this image")
         first = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", tokens.read_text(encoding="utf-8"))
         self.assertEqual(first.group(1).lower(), letters.ACCENT_HEX)
+
+
+class ScoreValidityTests(TestCase):
+    """Score validity (scoring/validity.py): valid_until is stored on creation; expired and superseded
+    scores cannot be approved, but can be declined or referred."""
+
+    def setUp(self):
+        self.client = APIClient(HTTP_HOST="localhost")
+        self.owner = User.objects.create_user(username="vo", email="vo@test.ke", password="x", role="owner",
+                                              full_name="Akinyi Otieno")
+        self.analyst = User.objects.create_user(username="va", email="va@test.ke", password="x", role="analyst",
+                                                full_name="Validity Analyst")
+
+    # helpers -------------------------------------------------------------
+    def submit(self, data=MODERATE_RISK, **extra):
+        self.client.force_authenticate(self.owner)
+        res = self.client.post("/api/scoring/assess/", {**data, **extra}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        return res.json(), CreditAssessment.objects.get(pk=res.json()["pk"])
+
+    def make(self, business=None, days_ago=0, n=1):
+        """Assessments created directly (no scoring), `days_ago` days ago, valid for 30 days from then."""
+        made = []
+        for i in range(n):
+            req = CreditRequest.objects.create(user=self.owner, business=business,
+                                               business_name=business.business_name if business else f"Biz {i}",
+                                               monthly_profit_kes=1000)
+            a = CreditAssessment.objects.create(request=req, probability_of_default=0.3, credit_score=640,
+                                                risk_category="Moderate Risk", model_version=services.MODEL_VERSION)
+            created = timezone.now() - timedelta(days=days_ago)
+            CreditAssessment.objects.filter(pk=a.pk).update(created_at=created,
+                                                            valid_until=created + timedelta(days=30))
+            a.refresh_from_db()
+            made.append(a)
+        return made if n > 1 else made[0]
+
+    def business(self, name="Duka Moja"):
+        return BusinessProfile.objects.create(user=self.owner, business_name=name, sector="Retail",
+                                              business_age_years=3, legal_status="Sole", location_type="Urban",
+                                              employees_count=2, county="Nairobi")
+
+    def review(self, a, decision, note=""):
+        self.client.force_authenticate(self.analyst)
+        return self.client.post(f"/api/scoring/assessments/{a.pk}/review/", {"decision": decision, "note": note},
+                                format="json")
+
+    # tests ---------------------------------------------------------------
+    @override_settings(SCORE_VALIDITY_DAYS=30)
+    def test_new_assessment_is_valid_for_the_configured_days(self):
+        body, a = self.submit()
+        expected = a.created_at + timedelta(days=30)
+        self.assertLess(abs((a.valid_until - expected).total_seconds()), 5)
+        self.assertEqual(body["validity_status"], "valid")
+        self.assertEqual(body["days_remaining"], 30)
+        self.assertEqual(body["valid_until"], a.valid_until.isoformat())
+
+    def test_valid_until_is_stored_not_recomputed_from_the_setting(self):
+        with override_settings(SCORE_VALIDITY_DAYS=30):
+            _, a = self.submit()
+        stored = a.valid_until
+        with override_settings(SCORE_VALIDITY_DAYS=5):
+            a.review_note = "touched"
+            a.save()
+            a.refresh_from_db()
+            self.assertEqual(a.valid_until, stored)
+            self.assertEqual(get_validity(a)["days_remaining"], 30)
+
+    def test_past_valid_until_is_expired(self):
+        a = self.make()
+        a.valid_until = timezone.now() - timedelta(minutes=1)
+        a.save(update_fields=["valid_until"])
+        v = get_validity(a)
+        self.assertEqual(v["status"], "expired")
+        self.assertIsNone(v["days_remaining"])
+
+    def test_older_assessment_of_the_same_business_is_superseded(self):
+        biz = self.business()
+        older = self.make(biz, days_ago=3)
+        newer = self.make(biz, days_ago=1)
+        other = self.make(self.business("Duka Mbili"), days_ago=5)  # another business: unaffected
+        self.assertEqual(get_validity(older)["status"], "superseded")
+        self.assertIsNone(get_validity(older)["days_remaining"])
+        self.assertEqual(get_validity(newer)["status"], "valid")
+        self.assertEqual(get_validity(other)["status"], "valid")
+        # The list annotation agrees with the per-row check.
+        flags = dict(with_superseded(CreditAssessment.objects.all()).values_list("pk", "is_superseded"))
+        self.assertEqual(flags, {older.pk: True, newer.pk: False, other.pk: False})
+
+    def test_assessments_without_a_business_are_never_superseded(self):
+        first, second = self.make(None, days_ago=2), self.make(None, days_ago=1)
+        self.assertEqual(get_validity(first)["status"], "valid")
+        self.assertEqual(get_validity(second)["status"], "valid")
+
+    def test_reassessing_the_same_business_through_the_api_supersedes_the_first(self):
+        first_body, first = self.submit()
+        self.submit(business_id=first_body["business_id"], business_name=None)
+        self.client.force_authenticate(self.owner)
+        rows = {r["pk"]: r for r in self.client.get("/api/scoring/assessments/").json()}
+        self.assertEqual(rows[first.pk]["validity_status"], "superseded")
+        self.assertEqual(sorted(r["validity_status"] for r in rows.values()), ["superseded", "valid"])
+
+    def test_expired_score_cannot_be_approved_but_can_be_declined(self):
+        a = self.make(days_ago=40)
+        res = self.review(a, "approved")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("This score expired on", res.json()["detail"])
+        self.assertIn("re-assess", res.json()["detail"])
+        self.assertEqual(res.json()["validity_status"], "expired")
+        a.refresh_from_db()
+        self.assertEqual(a.review_status, "pending")
+
+        res = self.review(a, "declined", "Score has expired; please re-apply.")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["review_status"], "declined")
+        self.assertEqual(self.review(a, "referred", "Send updated figures.").status_code, 200)
+
+    def test_superseded_score_cannot_be_approved(self):
+        biz = self.business()
+        older, _ = self.make(biz, days_ago=2), self.make(biz, days_ago=1)
+        res = self.review(older, "approved")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("superseded", res.json()["detail"])
+
+    def test_valid_score_can_still_be_approved(self):
+        a = self.make(days_ago=1)
+        res = self.review(a, "approved")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()["review_status"], "approved")
+        self.assertEqual(res.json()["validity_status"], "valid")
+
+    def test_lists_return_validity_without_a_query_per_row(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def run(user, url):
+            self.client.force_authenticate(user)
+            with CaptureQueriesContext(connection) as ctx:
+                res = self.client.get(url)
+            self.assertEqual(res.status_code, 200)
+            rows = res.json()
+            self.assertTrue(all(r["validity_status"] in ("valid", "expired", "superseded") for r in rows))
+            self.assertTrue(all("valid_until" in r and "days_remaining" in r for r in rows))
+            return len(ctx.captured_queries), rows
+
+        biz = self.business()
+        for url, user in (("/api/scoring/assessments/", self.owner), ("/api/scoring/assessments/all/", self.analyst)):
+            self.make(biz, days_ago=10, n=2)
+            self.make(None, days_ago=45)
+            small, rows_small = run(user, url)
+            self.make(biz, days_ago=5, n=6)
+            self.make(None, days_ago=50, n=2)
+            with self.assertNumQueries(small):
+                self.client.get(url)
+            large, rows_large = run(user, url)
+            self.assertGreater(len(rows_large), len(rows_small))
+            self.assertLessEqual(large, 3)
+            self.assertEqual({r["validity_status"] for r in rows_large}, {"valid", "expired", "superseded"})
+            CreditAssessment.objects.all().delete()
+
+    def test_letter_shows_valid_until_and_marks_an_expired_score(self):
+        _, a = self.submit()
+        self.assertEqual(self.review(a, "declined", "Not enough trading history.").status_code, 200)
+        self.client.force_authenticate(self.owner)
+        text = DecisionLetterTests.pdf(self.client.get(f"/api/scoring/assessments/{a.pk}/letter/"))[1]
+        self.assertIn(f"Valid until: {short_date(a.valid_until)}", text)
+        self.assertNotIn("no longer valid", text)
+
+        CreditAssessment.objects.filter(pk=a.pk).update(valid_until=timezone.now() - timedelta(days=1))
+        reader, text = DecisionLetterTests.pdf(self.client.get(f"/api/scoring/assessments/{a.pk}/letter/"))
+        self.assertEqual(len(reader.pages), 1)
+        self.assertIn("This score is no longer valid. A new assessment is required.", text)
+        self.assertIn("EXPIRED", text)
+
+    def test_set_validity_command(self):
+        from io import StringIO
+        from django.core.management import call_command
+
+        a = self.make(days_ago=1)
+        out = StringIO()
+        call_command("set_validity", a.pk, "--days", "-1", stdout=out)
+        a.refresh_from_db()
+        self.assertEqual(get_validity(a)["status"], "expired")
+        self.assertIn(f"Assessment {a.pk}", out.getvalue())
+        call_command("set_validity", a.pk, "--days", "30", stdout=StringIO())
+        a.refresh_from_db()
+        self.assertEqual(get_validity(a)["days_remaining"], 30)
+
+    def test_short_date_is_nairobi_time(self):
+        from datetime import datetime, timezone as dt_tz
+        # 21:30 UTC on 16 Dec is already 17 Dec in Nairobi (UTC+3).
+        self.assertEqual(short_date(datetime(2026, 12, 16, 21, 30, tzinfo=dt_tz.utc)), "17 Dec 2026")

@@ -224,6 +224,14 @@ ML_ARTIFACTS_DIR = BASE_DIR / "ml_artifacts"
 
 
 # ─────────────────────────────────────────────────────────────
+# Score validity
+# ─────────────────────────────────────────────────────────────
+# Days a credit score stays valid after it is created. Stored on each assessment (valid_until) when it
+# is created, so changing this later does not change existing records.
+SCORE_VALIDITY_DAYS = config("SCORE_VALIDITY_DAYS", default=30, cast=int)
+
+
+# ─────────────────────────────────────────────────────────────
 # Logging (helps catch mistakes during development)
 # ─────────────────────────────────────────────────────────────
 LOGGING = {

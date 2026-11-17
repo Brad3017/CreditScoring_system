@@ -4,6 +4,8 @@ import AppShell from "../components/AppShell";
 import LoadError from "../components/LoadError";
 import RiskScale, { riskKeyFromCategory } from "../components/RiskScale";
 import LegacyTag from "../components/LegacyTag";
+import ValidityBadge from "../components/ValidityBadge";
+import { validityProps } from "../lib/validity";
 import { getCurrentUser, fetchMyAssessments } from "../lib/api";
 import { getLesson, topRaisingLessonKeys } from "../lib/lessons";
 
@@ -104,6 +106,9 @@ export default function Home() {
               </div>
               {loading ? loadingLine : (
                 <>
+                  {latest.validity_status && (
+                    <p style={{ margin: "0 0 var(--space-4)" }}><ValidityBadge {...validityProps(latest)} /></p>
+                  )}
                   <RiskScale score={latest.credit_score} riskCategory={latest.risk_category} isLegacy={latest.is_legacy} modelVersion={latest.model_version} />
                   {riskKey && (
                     <p style={{ margin: "var(--space-6) 0 0", maxWidth: "52ch" }}>{STATEMENTS[riskKey]}</p>
@@ -165,7 +170,7 @@ export default function Home() {
               <div className="table-wrap">
                 <table className="table">
                   <thead>
-                    <tr><th>Date</th><th>Reference</th><th style={{ textAlign: "right" }}>Score</th><th>Risk</th><th></th></tr>
+                    <tr><th>Date</th><th>Reference</th><th style={{ textAlign: "right" }}>Score</th><th>Risk</th><th>Validity</th><th></th></tr>
                   </thead>
                   <tbody>
                     {assessments.slice(0, 3).map((item, i) => {
@@ -176,6 +181,7 @@ export default function Home() {
                           <td><span className="num" style={{ color: "var(--ink-2)" }}>{item.id}</span><LegacyTag record={item} /></td>
                           <td className="num" style={{ textAlign: "right", fontWeight: 700 }}>{item.credit_score ?? "–"}</td>
                           <td style={{ fontWeight: 600, color: key ? `var(--risk-${key})` : "var(--ink-2)", whiteSpace: "nowrap" }}>{item.risk_category || "–"}</td>
+                          <td><ValidityBadge {...validityProps(item)} /></td>
                           <td style={{ textAlign: "right" }}>
                             <button type="button" className="btn btn-secondary" onClick={() => openReport(item)}>View</button>
                           </td>

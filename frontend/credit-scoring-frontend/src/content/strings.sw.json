@@ -1,0 +1,15 @@
+{
+  "validity.valid": "Halali · inaisha baada ya siku {n}",
+  "validity.expiring": "Inaisha baada ya siku {n}",
+  "validity.expired": "Muda uliisha tarehe {date}",
+  "validity.superseded": "Imebadilishwa",
+  "validity.validUntil": "Halali hadi {date}",
+  "validity.banner": "Alama hii si halali tena.",
+  "validity.reassess": "Tathmini upya",
+  "validity.viewLatest": "Tazama tathmini ya hivi punde",
+  "validity.approveBlocked": "Muda wa alama umeisha — mmiliki atathmini upya",
+  "validity.watermarkExpired": "MUDA UMEISHA",
+  "validity.watermarkSuperseded": "IMEBADILISHWA",
+  "validity.noteExpired": "Alama hii si halali tena. Tathmini mpya inahitajika.",
+  "validity.noteSuperseded": "Kuna tathmini mpya zaidi ya biashara hii."
+}

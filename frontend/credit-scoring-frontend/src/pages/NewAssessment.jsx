@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { COUNTIES } from "../lib/counties";
 import { fetchBusinesses, getCurrentUser, submitAssessment } from "../lib/api";
@@ -21,6 +21,13 @@ function reconcile(f, list) {
   const b = list.find((x) => String(x.id) === f.business_choice);
   if (!b) return { ...f, business_choice: "", business_name: "", kra_pin: "" };
   return { ...f, business_name: b.business_name, kra_pin: b.kra_pin || "" };
+}
+
+// A saved business chosen: its details fill the form (the same as picking it from the list).
+function withBusiness(f, b) {
+  const next = { ...f, business_choice: String(b.id), kra_pin: b.kra_pin || "" };
+  for (const field of PROFILE_FIELDS) if (b[field] != null && b[field] !== "") next[field] = String(b[field]);
+  return next;
 }
 
 const STEPS = [
@@ -125,6 +132,9 @@ function toPayload({ repayment_confidence: _unused, business_choice: _choice, kr
 
 export default function NewAssessment() {
   const navigate = useNavigate();
+  // ?business=<id>: start with that saved business selected (e.g. "Re-assess" on an expired report).
+  const [searchParams] = useSearchParams();
+  const preselect = searchParams.get("business");
   const [user, setUser] = useState(null);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState(() => loadDraft() || INITIAL);
@@ -142,7 +152,8 @@ export default function NewAssessment() {
         const safe = Array.isArray(list) ? list : [];
         setBusinesses(safe);
         setBusinessLoadError("");
-        setForm((f) => reconcile(f, safe));
+        const chosen = preselect ? safe.find((b) => String(b.id) === preselect) : null;
+        setForm((f) => (chosen ? withBusiness(f, chosen) : reconcile(f, safe)));
       })
       .catch(() => {
         // Not fatal: the owner can still add a new business. The server refuses a PIN that is already registered.
@@ -171,11 +182,7 @@ export default function NewAssessment() {
     }
     const b = (businesses || []).find((x) => String(x.id) === value);
     if (!b) return;
-    setForm((f) => {
-      const next = { ...f, business_choice: value, kra_pin: b.kra_pin || "" };
-      for (const field of PROFILE_FIELDS) if (b[field] != null && b[field] !== "") next[field] = String(b[field]);
-      return next;
-    });
+    setForm((f) => withBusiness(f, b));
   }
 
   function update(e) {

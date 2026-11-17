@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import CreditAssessment, LessonView
+from .validity import get_validity, with_superseded
 from . import services
 
 User = get_user_model()
@@ -222,9 +223,10 @@ class AdminExportView(APIView):
         w.writerow([
             "id", "submitted", "business", "sector", "county", "legal_status", "monthly_revenue_kes",
             "credit_score", "probability_of_default", "risk_category", "recommended_limit_kes",
-            "review_status", "reviewed_by", "reviewed_at", "review_note",
+            "review_status", "reviewed_by", "reviewed_at", "review_note", "valid_until", "validity_status",
         ])
-        for a in _queryset(request).order_by("-created_at"):
+        for a in with_superseded(_queryset(request)).order_by("-created_at"):
+            v = get_validity(a)
             r = a.request
             w.writerow([
                 a.id, a.created_at.date().isoformat(), _safe(r.business_name), _safe(r.sector),
@@ -232,5 +234,6 @@ class AdminExportView(APIView):
                 a.probability_of_default, a.risk_category, a.recommended_limit, a.review_status,
                 _safe(a.reviewed_by.full_name or a.reviewed_by.email) if a.reviewed_by else "",
                 a.reviewed_at.isoformat() if a.reviewed_at else "", _safe(a.review_note),
+                v["valid_until"].isoformat() if v["valid_until"] else "", v["status"],
             ])
         return response

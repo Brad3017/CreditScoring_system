@@ -19,6 +19,7 @@ from .serializers import (
     MODEL_INPUT_FIELDS,
     pin_taken_message,
 )
+from .validity import VALID, approval_block_message, get_validity, validity_fields, with_superseded
 from .services import (
     evaluate_credit_request, label_matches_score, limit_explanation, MODEL_VERSION, FEATURES, LIMIT_INPUTS,
 )
@@ -145,6 +146,9 @@ def _payload(a, detailed=False):
         "review_note": a.review_note,
         "reviewed_by": _reviewer_name(a),
         "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+        # valid_until (ISO), validity_status (valid | expired | superseded), days_remaining (int or null).
+        # Lists pass querysets through with_superseded(), so this adds no query per row there.
+        **validity_fields(a),
     }
     if detailed:
         data["applicant"] = {
@@ -181,7 +185,7 @@ class AssessmentListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = (
+        qs = with_superseded(
             CreditAssessment.objects.filter(request__user=request.user)
             .select_related("request", "reviewed_by")
             .order_by("-created_at")
@@ -195,9 +199,9 @@ class AssessmentDetailView(APIView):
 
     def get(self, request, pk):
         try:
-            a = CreditAssessment.objects.select_related(
+            a = with_superseded(CreditAssessment.objects.select_related(
                 "request", "request__user", "request__business", "reviewed_by"
-            ).get(pk=pk)
+            )).get(pk=pk)
         except CreditAssessment.DoesNotExist:
             return Response({"detail": "Not found"}, status=404)
         return Response(_payload(a, detailed=True))
@@ -228,6 +232,15 @@ class ReviewAssessmentView(APIView):
                 {"detail": "Please add a short note explaining a decline or referral."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # An expired or superseded score cannot be approved. Declining or referring it is still allowed.
+        if decision == "approved":
+            validity = get_validity(a)
+            if validity["status"] != VALID:
+                return Response({
+                    "detail": approval_block_message(a, validity),
+                    "validity_status": validity["status"],
+                    "valid_until": validity["valid_until"].isoformat() if validity["valid_until"] else None,
+                }, status=status.HTTP_400_BAD_REQUEST)
 
         a.review_status = decision
         a.review_note = note
@@ -366,9 +379,9 @@ class AllAssessmentsAnalystView(APIView):
     permission_classes = [IsAnalystOrAdmin]
 
     def get(self, request):
-        qs = CreditAssessment.objects.select_related(
+        qs = with_superseded(CreditAssessment.objects.select_related(
             "request", "reviewed_by"
-        ).order_by("-created_at")
+        ).order_by("-created_at"))
         return Response([_payload(a) for a in qs], status=status.HTTP_200_OK)
 
 
