@@ -17,6 +17,10 @@ KRA_PIN_OWN_BUSINESS_MESSAGE = (
 )
 KRA_PIN_LOCKED_MESSAGE = "Contact support to change a registered KRA PIN."
 
+# Lipa na M-Pesa till number (the statement's Shortcode): digits only, 5 to 7 of them.
+TILL_NUMBER_PATTERN = r"^\d{5,7}$"
+TILL_NUMBER_MESSAGE = "Enter the till number in digits only (5 to 7 digits)."
+
 
 def normalise_kra_pin(value):
     """Trim and uppercase. Blank becomes None, so empty PINs never clash on the unique index."""
@@ -45,6 +49,11 @@ class BusinessProfile(models.Model):
     location_type = models.CharField(max_length=20)
     employees_count = models.IntegerField()
     county = models.CharField(max_length=50)
+    # Lipa na M-Pesa till number. Filled from the first accepted till statement when blank; the owner can edit it.
+    till_number = models.CharField(
+        max_length=10, blank=True, default="",
+        validators=[RegexValidator(TILL_NUMBER_PATTERN, TILL_NUMBER_MESSAGE)],
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -60,7 +69,54 @@ class BusinessProfile(models.Model):
         return self.business_name
 
 
+class StatementUpload(models.Model):
+    """One Lipa na M-Pesa till statement an owner uploaded for one of their businesses, and what was read
+    from it (scoring/statements/). The PDF and its password are never stored; file_sha256 identifies a
+    repeat upload of the same file."""
+    ACCEPTED, REJECTED = "accepted", "rejected"
+    STATUS_CHOICES = [(ACCEPTED, "Accepted"), (REJECTED, "Rejected")]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="statement_uploads")
+    business = models.ForeignKey(BusinessProfile, on_delete=models.CASCADE, related_name="statement_uploads")
+    file_sha256 = models.CharField(max_length=64, db_index=True)
+
+    organisation_name = models.CharField(max_length=255, blank=True)
+    shortcode = models.CharField(max_length=20, blank=True)
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+    transactions_count = models.IntegerField(default=0)   # completed rows read
+    skipped_rows = models.IntegerField(default=0)         # rows with any other status
+
+    # Monthly figures use days in the period x 30.4 (scoring/statements/summarise.py).
+    avg_monthly_revenue = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    till_payments = models.IntegerField(default=0)
+    unique_customers = models.IntegerField(default=0)
+    repeat_customer_share = models.FloatField(default=0)
+    avg_ticket = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    monthly_breakdown = models.JSONField(default=list, blank=True)
+    flags = models.JSONField(default=dict, blank=True)
+    checks = models.JSONField(default=list, blank=True)
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, db_index=True)
+    rejection_reason = models.TextField(blank=True, default="")
+    consent_given_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Till {self.shortcode} statement #{self.id} ({self.status})"
+
+
 class CreditRequest(models.Model):
+    REVENUE_SELF_REPORTED = "self_reported"
+    REVENUE_TILL_STATEMENT = "till_statement"
+    REVENUE_SOURCE_CHOICES = [
+        (REVENUE_SELF_REPORTED, "Self-reported"),
+        (REVENUE_TILL_STATEMENT, "Lipa na M-Pesa till statement"),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -85,6 +141,15 @@ class CreditRequest(models.Model):
     monthly_profit_kes = models.DecimalField(max_digits=15, decimal_places=2)
     days_payable_outstanding = models.IntegerField(default=30)
     cashflow_stability = models.IntegerField(default=3)  # 1 to 5 scale
+
+    # Where monthly_revenue_kes came from. With a till statement, revenue is the statement's average and
+    # monthly_profit_kes = revenue - monthly_expenses_kes (the owner's own figure; a statement shows no costs).
+    revenue_source = models.CharField(max_length=20, choices=REVENUE_SOURCE_CHOICES, default=REVENUE_SELF_REPORTED)
+    till_statement = models.ForeignKey(
+        StatementUpload, on_delete=models.PROTECT, null=True, blank=True, related_name="credit_requests",
+    )
+    # Self-reported monthly business costs. Asked only when revenue comes from a till statement; NULL otherwise.
+    monthly_expenses_kes = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
 
     # Borrowing track record & security (Model features)
     existing_loans = models.BooleanField(default=False)
@@ -169,6 +234,15 @@ class CreditAssessment(models.Model):
         related_name="reviewed_assessments",
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # ---- Owner's request for human review (Data Protection Act s.35) ----
+    # Kept after the analyst decides (history); "resolved" = a decision recorded after the request.
+    review_requested_at = models.DateTimeField(null=True, blank=True)
+    review_request_reason = models.TextField(blank=True, default="")
+
+    @property
+    def review_resolved(self):
+        return bool(self.review_requested_at and self.reviewed_at and self.reviewed_at >= self.review_requested_at)
 
     # ---- Score validity ----
     # Set once, when the assessment is created: created_at + settings.SCORE_VALIDITY_DAYS. Stored, never

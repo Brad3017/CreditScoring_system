@@ -232,6 +232,20 @@ SCORE_VALIDITY_DAYS = config("SCORE_VALIDITY_DAYS", default=30, cast=int)
 
 
 # ─────────────────────────────────────────────────────────────
+# Lipa na M-Pesa till statements (scoring/statements/)
+# ─────────────────────────────────────────────────────────────
+# A statement shorter than this many days is rejected.
+STATEMENT_MIN_DAYS = config("STATEMENT_MIN_DAYS", default=85, cast=int)
+# A statement that ended more than this many days ago gets a warning (not a rejection).
+STATEMENT_MAX_AGE_DAYS = config("STATEMENT_MAX_AGE_DAYS", default=30, cast=int)
+# True: a statement whose name or till number does not match the business is rejected instead of warned.
+STATEMENT_STRICT_IDENTITY = config("STATEMENT_STRICT_IDENTITY", default=False, cast=bool)
+# Upload limits. The file is read in memory and never written to disk.
+STATEMENT_MAX_BYTES = 10 * 1024 * 1024
+STATEMENT_MAX_PAGES = 60
+
+
+# ─────────────────────────────────────────────────────────────
 # Logging (helps catch mistakes during development)
 # ─────────────────────────────────────────────────────────────
 LOGGING = {

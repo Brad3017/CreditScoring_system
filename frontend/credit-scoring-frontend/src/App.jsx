@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
@@ -10,7 +10,11 @@ import MyAssessments from "./pages/MyAssessments";
 import BusinessProfilePage from "./pages/BusinessProfilePage";
 import Learn from "./pages/Learn";
 import LearnLesson from "./pages/LearnLesson";
+import Privacy from "./pages/Privacy";
+import PrivacyConsent from "./pages/PrivacyConsent";
+import { ConsentGate } from "./components/Consent";
 import { getToken, getRole, verifySession } from "./lib/api";
+import { useMissingConsents } from "./lib/consent";
 
 // Staff pages are split into their own chunks, so business owners never download them.
 const AnalystDashboard = lazy(() => import("./pages/AnalystDashboard"));
@@ -52,6 +56,20 @@ function AdminOnly({ children }) {
 }
 
 
+// Signed in but a required consent is missing (privacy notice for owners, confidentiality for staff):
+// the consent gate replaces every page except the public ones, so nothing else loads until it is given.
+const OPEN_PATHS = new Set(["/privacy", "/login", "/signup", "/"]);
+function ConsentGated({ children }) {
+  const missing = useMissingConsents();
+  const { pathname } = useLocation();
+  if (getToken() && missing.length && !OPEN_PATHS.has(pathname)) return <ConsentGate missing={missing} />;
+  return children;
+}
+
+function SignedIn({ children }) {
+  return getToken() ? children : <Navigate to="/login" replace />;
+}
+
 // Before any page sends a request, check that the stored session's user is the one the token belongs
 // to (GET /api/auth/me/). A mismatch clears the session and goes to /login (see verifySession).
 function useVerifiedSession() {
@@ -90,10 +108,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <Suspense fallback={<PageLoading />}>
+      <ConsentGated>
       <Routes>
         <Route path="/" element={<Navigate to="/signup" replace />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/account/privacy" element={<SignedIn><PrivacyConsent /></SignedIn>} />
 
         <Route path="/analyst" element={<AnalystOnly><AnalystDashboard /></AnalystOnly>} />
         <Route path="/analyst/requests" element={<AnalystOnly><AssessmentRequests /></AnalystOnly>} />
@@ -161,6 +182,7 @@ export default function App() {
           }
         />
       </Routes>
+      </ConsentGated>
       </Suspense>
     </BrowserRouter>
   );

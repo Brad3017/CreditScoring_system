@@ -1,3 +1,5 @@
+import { CREDIT_SCORING_EVENT, setMissingConsents } from "./consent";
+
 export const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
 
 // ---------------------------------------------------------------------------
@@ -74,6 +76,7 @@ async function authFetch(url, options = {}) {
     if (e?.name === "AbortError") throw e;
     throw new Error(NETWORK_MESSAGE);
   }
+  if (res.status === 403) noteConsentRequired(res.clone());
   if (res.status !== 401) return res;
 
   const outcome = await refreshAccess();
@@ -88,6 +91,22 @@ async function authFetch(url, options = {}) {
   throw err;
 }
 
+// Any 403 {code: "consent_required"}: a required consent (privacy notice, staff confidentiality) is missing,
+// e.g. the consent text changed while the app was open: refresh /auth/me/ so App shows the consent gate.
+// For credit_scoring, tell the new-assessment page to show its consent card.
+async function noteConsentRequired(clone) {
+  let body;
+  try {
+    body = await clone.json();
+  } catch {
+    return;
+  }
+  if (body?.code !== "consent_required") return;
+  const purposes = Array.isArray(body.purposes) ? body.purposes : [];
+  if (purposes.includes("credit_scoring")) window.dispatchEvent(new CustomEvent(CREDIT_SCORING_EVENT));
+  if (purposes.some((p) => p !== "credit_scoring")) fetchMe().catch(() => {});
+}
+
 export async function signup(data) {
   const res = await fetch(`${BASE}/auth/signup/`, {
     method: "POST",
@@ -95,7 +114,8 @@ export async function signup(data) {
     body: JSON.stringify(data),
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.detail || body.email?.[0] || "Signup failed");
+  if (!res.ok) throw new Error(body.detail || body.email?.[0] || body.privacy_notice_accepted?.[0] || "Signup failed");
+  setMissingConsents(body.missing_consents);
   return body;
 }
 
@@ -107,6 +127,7 @@ export async function login(data) {
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.detail || "Login failed");
+  setMissingConsents(body.missing_consents);
   return body;
 }
 
@@ -143,14 +164,17 @@ export async function submitAssessment(payload) {
 
 // Serializer errors arrive as { field: ["message", ...] }. The Error carries them as .fields
 // (field -> first message) so forms can show each one under its own input.
+// A body with a `code` (e.g. consent_required) keeps it, and its purposes, as .code and .purposes.
 function fieldError(body, fallback) {
   const fields = {};
   for (const [k, v] of Object.entries(body || {})) {
     const msg = Array.isArray(v) ? v.find((m) => typeof m === "string") : typeof v === "string" ? v : null;
-    if (msg && k !== "detail" && k !== "error") fields[k] = msg;
+    if (msg && !["detail", "error", "code", "purposes"].includes(k)) fields[k] = msg;
   }
   const err = new Error(body?.detail || body?.error || Object.values(fields).join(" ") || fallback);
   err.fields = fields;
+  err.code = body?.code;
+  err.purposes = body?.purposes;
   return err;
 }
 
@@ -173,6 +197,7 @@ export function saveSession(access, refresh, role, user) {
 
 export function clearSession() {
   SESSION_KEYS.forEach((k) => localStorage.removeItem(k));
+  setMissingConsents([]);
 }
 
 // The signed-in user's display details (id, email, full_name, role), kept with the session so the
@@ -207,6 +232,7 @@ export async function verifySession() {
     return "mismatch";
   }
   storeUser(me);
+  setMissingConsents(me.missing_consents);
   return "ok";
 }
 
@@ -239,6 +265,7 @@ export async function fetchMe() {
   if (!res.ok) throw new Error(await readError(res, "Your account details could not be loaded."));
   const me = await res.json();
   storeUser(me);
+  setMissingConsents(me.missing_consents);
   return me;
 }
 
@@ -293,6 +320,27 @@ export async function updateBusiness(id, data) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw fieldError(body, "Your business details could not be saved.");
+  return body;
+}
+
+// Lipa na M-Pesa till statement: POST /statements/upload/ (multipart). Resolves to the statement
+// (201 new, 200 the same file uploaded before). Rejects with an Error carrying .code (e.g. "wrong_password",
+// "statement_rejected") and, for a rejected statement, .checks. No Content-Type header: the browser sets the
+// multipart boundary itself.
+export async function uploadTillStatement({ file, password, businessId, consent }) {
+  const data = new FormData();
+  data.append("file", file);
+  if (password) data.append("password", password);
+  data.append("business_id", String(businessId));
+  data.append("consent", consent ? "true" : "false");
+  const res = await authFetch(`${BASE}/statements/upload/`, { method: "POST", body: data });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(body.detail || body.code || `The statement could not be read (HTTP ${res.status}).`);
+    err.code = body.code || (res.status === 404 ? "business_not_found" : "upload_failed");
+    err.checks = body.checks || [];
+    throw err;
+  }
   return body;
 }
 
@@ -363,6 +411,65 @@ export async function reviewAssessment(pk, decision, note) {
   return res.json();
 }
 
+// Owner asks for a credit analyst to review a result (Data Protection Act s.35). Resolves to the assessment.
+export async function requestReview(pk, reason) {
+  const res = await authFetch(`${BASE}/scoring/assessments/${pk}/request-review/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw fieldError(body, "Your request could not be sent. Try again.");
+  return body;
+}
+
+// ---------------------------------------------------------------------------
+// Consent (accounts/consent_texts.py is the source of the wording).
+// ---------------------------------------------------------------------------
+let consentTexts = null;
+
+// Public: {version, texts: {purpose: text}, labels}. Loaded once per page load.
+export function fetchConsentTexts() {
+  if (!consentTexts) {
+    consentTexts = fetch(`${BASE}/consents/texts/`)
+      .then((res) => {
+        if (!res.ok) throw new Error("The consent wording could not be loaded. Refresh the page to try again.");
+        return res.json();
+      })
+      .catch((e) => {
+        consentTexts = null;
+        throw e.message?.startsWith("The consent") ? e : new Error(NETWORK_MESSAGE);
+      });
+  }
+  return consentTexts;
+}
+
+// {version, consents: [{purpose, label, active, version, granted_at, withdrawn_at, withdrawable}], missing_required}
+export async function fetchConsents() {
+  const res = await authFetch(`${BASE}/consents/`, { headers: {} });
+  if (!res.ok) throw new Error(await readError(res, "Your consent choices could not be loaded."));
+  const body = await res.json();
+  setMissingConsents(body.missing_required);
+  return body;
+}
+
+async function consentPost(url, data, fallback) {
+  const res = await authFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data || {}),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw fieldError(body, fallback);
+  setMissingConsents(body.missing_required);
+  return body;
+}
+
+export const grantConsent = (purpose) =>
+  consentPost(`${BASE}/consents/`, { purpose }, "Your consent could not be saved. Try again.");
+export const withdrawConsent = (purpose) =>
+  consentPost(`${BASE}/consents/${purpose}/withdraw/`, null, "Your consent could not be withdrawn. Try again.");
+
 async function adminGet(path, params = {}) {
   const q = new URLSearchParams(
     Object.entries(params).filter(([, v]) => v)
@@ -382,6 +489,7 @@ export const fetchAdminOverview = (params) => adminGet("/scoring/admin/overview/
 export const fetchAdminFairness = (params) => adminGet("/scoring/admin/fairness/", params);
 export const fetchAdminModel = () => adminGet("/scoring/admin/model/");
 export const fetchAdminUsers = () => adminGet("/auth/admin/users/");
+export const fetchAdminUserConsents = (id) => adminGet(`/auth/admin/users/${id}/consents/`);
 
 export async function updateAdminUser(id, changes) {
   const res = await authFetch(`${BASE}/auth/admin/users/${id}/`, {

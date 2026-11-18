@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import AdminLayout from "../../components/AdminLayout";
 import { card, muted, inputStyle, th, td, fmtDateTime } from "../../components/analystUi";
-import { getCurrentUser, fetchAdminUsers, updateAdminUser } from "../../lib/api";
+import { getCurrentUser, fetchAdminUsers, fetchAdminUserConsents, updateAdminUser } from "../../lib/api";
+import { PURPOSE_LABELS } from "../../lib/consent";
 
 const ROLES = [["owner", "MSME owner"], ["analyst", "Credit analyst"], ["admin", "Administrator"]];
 
@@ -14,6 +15,19 @@ export default function AdminUsers() {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("all");
   const [savingId, setSavingId] = useState(null);
+  // Open consent history: {id, rows (null while loading), error}.
+  const [history, setHistory] = useState(null);
+
+  function toggleHistory(u) {
+    if (history?.id === u.id) {
+      setHistory(null);
+      return;
+    }
+    setHistory({ id: u.id, rows: null, error: "" });
+    fetchAdminUserConsents(u.id)
+      .then((rows) => setHistory((h) => (h?.id === u.id ? { ...h, rows } : h)))
+      .catch((e) => setHistory((h) => (h?.id === u.id ? { ...h, rows: [], error: e.message } : h)));
+  }
 
   useEffect(() => {
     getCurrentUser().then(setMe).catch(() => {});
@@ -76,12 +90,13 @@ export default function AdminUsers() {
               <thead>
                 <tr>
                   <th style={th}>User</th><th style={th}>Role</th><th style={th}>Assessments</th>
-                  <th style={th}>Last login</th><th style={th}>Account</th>
+                  <th style={th}>Last login</th><th style={th}>Account</th><th style={th}>Consent</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((u) => (
-                  <tr key={u.id} style={{ opacity: u.is_active ? 1 : 0.6 }}>
+                  <Fragment key={u.id}>
+                  <tr style={{ opacity: u.is_active ? 1 : 0.6 }}>
                     <td style={td}>
                       <div style={{ fontWeight: 600 }}>{u.full_name || u.email}{u.is_you && <span style={{ ...muted, marginLeft: 8 }}>you</span>}</div>
                       {u.full_name && <div style={muted}>{u.email}</div>}
@@ -104,9 +119,23 @@ export default function AdminUsers() {
                         {u.is_active ? "Deactivate" : "Reactivate"}
                       </button>
                     </td>
+                    <td style={td}>
+                      <button type="button" className="btn btn-secondary" aria-expanded={history?.id === u.id}
+                        aria-controls={`consents-${u.id}`} onClick={() => toggleHistory(u)}>
+                        Consent history
+                      </button>
+                    </td>
                   </tr>
+                  {history?.id === u.id && (
+                    <tr id={`consents-${u.id}`}>
+                      <td style={{ ...td, background: "var(--paper)" }} colSpan={6}>
+                        <ConsentHistory state={history} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
-                {!visible.length && <tr><td style={td} colSpan={5}>No users match.</td></tr>}
+                {!visible.length && <tr><td style={td} colSpan={6}>No users match.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -117,5 +146,38 @@ export default function AdminUsers() {
         </p>
       </section>
     </AdminLayout>
+  );
+}
+
+// Every consent record of one user, newest first (GET /auth/admin/users/<id>/consents/). Records are never
+// edited or deleted, except that a withdrawal date is added.
+function ConsentHistory({ state }) {
+  if (!state.rows) return <p role="status" style={{ margin: 0, color: "var(--ink-2)" }}>Loading consent history…</p>;
+  if (state.error) return <p role="alert" style={{ margin: 0, color: "var(--risk-high)" }}>{state.error}</p>;
+  if (!state.rows.length) return <p style={{ margin: 0, color: "var(--ink-2)" }}>No consent records yet. They will be asked at their next login.</p>;
+  return (
+    <div className="table-wrap" style={{ background: "var(--surface)" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <caption className="sr-only">Consent history</caption>
+        <thead>
+          <tr>
+            <th style={th}>Purpose</th><th style={th}>Version</th><th style={th}>Granted</th>
+            <th style={th}>Withdrawn</th><th style={th}>IP address</th><th style={th}>Reference</th>
+          </tr>
+        </thead>
+        <tbody>
+          {state.rows.map((c) => (
+            <tr key={c.id}>
+              <td style={td}>{PURPOSE_LABELS[c.purpose] || c.purpose}</td>
+              <td style={td} className="num">{c.version}</td>
+              <td style={td}>{fmtDateTime(c.granted_at)}</td>
+              <td style={td}>{c.withdrawn_at ? fmtDateTime(c.withdrawn_at) : "–"}</td>
+              <td style={td} className="num">{c.ip_address || "–"}</td>
+              <td style={td} className="num">{c.reference ? `Statement ${c.reference}` : "–"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

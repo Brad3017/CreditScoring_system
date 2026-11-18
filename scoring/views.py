@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
 from django.utils import timezone
@@ -6,9 +8,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import UserRateThrottle
+from accounts.consent import credit_scoring_block
+from accounts.permissions import ConsentRequired
 
 from .models import (
-    CreditRequest, CreditAssessment, BusinessProfile, LessonView, LetterDownload,
+    CreditRequest, CreditAssessment, BusinessProfile, LessonView, LetterDownload, StatementUpload,
 )
 from .letters import build_decision_letter, letter_reference, DECIDED
 from .serializers import (
@@ -18,7 +22,9 @@ from .serializers import (
     AssessmentBusinessSerializer,
     MODEL_INPUT_FIELDS,
     pin_taken_message,
+    statement_payload,
 )
+from .statements import profit_from
 from .validity import VALID, approval_block_message, get_validity, validity_fields, with_superseded
 from .services import (
     evaluate_credit_request, label_matches_score, limit_explanation, MODEL_VERSION, FEATURES, LIMIT_INPUTS,
@@ -124,6 +130,11 @@ def _payload(a, detailed=False):
         "sector": r.sector,
         "county": r.county,
         "monthly_revenue": float(r.monthly_revenue_kes),
+        # self_reported | till_statement. With a till statement, revenue is the statement's monthly average
+        # and expenses are the owner's own figure (a till statement shows sales only).
+        "revenue_source": r.revenue_source,
+        "monthly_expenses": float(r.monthly_expenses_kes) if r.monthly_expenses_kes is not None else None,
+        "till_statement": statement_payload(r.till_statement) if r.till_statement_id else None,
         "credit_score": a.credit_score,
         "probability_of_default": float(a.probability_of_default),
         "risk_category": a.risk_category,
@@ -146,6 +157,11 @@ def _payload(a, detailed=False):
         "review_note": a.review_note,
         "reviewed_by": _reviewer_name(a),
         "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+        # The owner's request for human review (Data Protection Act s.35). Kept after the decision;
+        # review_resolved = an analyst decided after the request.
+        "review_requested_at": a.review_requested_at.isoformat() if a.review_requested_at else None,
+        "review_request_reason": a.review_request_reason,
+        "review_resolved": a.review_resolved,
         # valid_until (ISO), validity_status (valid | expired | superseded), days_remaining (int or null).
         # Lists pass querysets through with_superseded(), so this adds no query per row there.
         **validity_fields(a),
@@ -162,6 +178,7 @@ def _payload(a, detailed=False):
             "loan_amount": float(r.loan_amount),
             "tenure_months": r.tenure_months,
             "monthly_profit_kes": float(r.monthly_profit_kes),
+            "monthly_expenses_kes": float(r.monthly_expenses_kes) if r.monthly_expenses_kes is not None else None,
             "days_payable_outstanding": r.days_payable_outstanding,
             "cashflow_stability": r.cashflow_stability,
             "existing_loans": r.existing_loans,
@@ -175,6 +192,10 @@ def _payload(a, detailed=False):
             "business_age_years": r.business_age_years,
             "employees_count": r.employees_count,
         }
+        # Staff only: why this application can't be approved because of the owner's credit-scoring
+        # consent (withdrawn, or never given for the current text). Null when approval is allowed.
+        block = credit_scoring_block(r.user)
+        data["consent_block"] = {"code": block[0], "detail": block[1]} if block else None
         # Downloads of the decision letter (inline previews are not counted).
         data["letter_downloads"] = a.letter_downloads.count()
     return data
@@ -182,12 +203,12 @@ def _payload(a, detailed=False):
 
 class AssessmentListView(APIView):
     """The logged-in borrower's own assessments (now including review status)."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ConsentRequired]
 
     def get(self, request):
         qs = with_superseded(
             CreditAssessment.objects.filter(request__user=request.user)
-            .select_related("request", "reviewed_by")
+            .select_related("request", "request__till_statement", "reviewed_by")
             .order_by("-created_at")
         )
         return Response([_payload(a) for a in qs], status=status.HTTP_200_OK)
@@ -195,12 +216,12 @@ class AssessmentListView(APIView):
 
 class AssessmentDetailView(APIView):
     """Full detail of one assessment, for analysts and admins."""
-    permission_classes = [IsAnalystOrAdmin]
+    permission_classes = [IsAnalystOrAdmin, ConsentRequired]
 
     def get(self, request, pk):
         try:
             a = with_superseded(CreditAssessment.objects.select_related(
-                "request", "request__user", "request__business", "reviewed_by"
+                "request", "request__user", "request__business", "request__till_statement", "reviewed_by"
             )).get(pk=pk)
         except CreditAssessment.DoesNotExist:
             return Response({"detail": "Not found"}, status=404)
@@ -209,13 +230,15 @@ class AssessmentDetailView(APIView):
 
 class ReviewAssessmentView(APIView):
     """Analyst records a decision: approved, declined or referred."""
-    permission_classes = [IsAnalystOrAdmin]
+    permission_classes = [IsAnalystOrAdmin, ConsentRequired]
 
     ALLOWED = {"approved", "declined", "referred"}
 
     def post(self, request, pk):
         try:
-            a = CreditAssessment.objects.select_related("request", "request__user").get(pk=pk)
+            a = CreditAssessment.objects.select_related(
+                "request", "request__user", "request__till_statement"
+            ).get(pk=pk)
         except CreditAssessment.DoesNotExist:
             return Response({"detail": "Not found"}, status=404)
 
@@ -234,6 +257,10 @@ class ReviewAssessmentView(APIView):
             )
         # An expired or superseded score cannot be approved. Declining or referring it is still allowed.
         if decision == "approved":
+            # Nor can the application of an owner without active credit-scoring consent.
+            block = credit_scoring_block(a.request.user)
+            if block:
+                return Response({"code": block[0], "detail": block[1]}, status=status.HTTP_400_BAD_REQUEST)
             validity = get_validity(a)
             if validity["status"] != VALID:
                 return Response({
@@ -250,14 +277,58 @@ class ReviewAssessmentView(APIView):
         return Response(_payload(a, detailed=True))
 
 
+STATEMENT_NOT_USABLE = "This till statement cannot be used for this assessment. Upload it again for this business."
+EXPENSES_REQUIRED = "Enter your monthly business costs in KES, 0 or more."
+
+
+def _till_inputs(user, payload):
+    """Applies an attached till statement to the submitted answers, in place. Returns the StatementUpload,
+    None when there is none, or raises _Reject. With a statement, revenue is ALWAYS the statement's monthly
+    average (any revenue the client sent is ignored) and profit = revenue - the owner's monthly expenses."""
+    raw_id = payload.pop("till_statement_id", None)
+    if raw_id in (None, ""):
+        # Self-reported: unchanged. Expenses are only asked for alongside a till statement.
+        payload.pop("monthly_expenses_kes", None)
+        return None
+
+    try:
+        statement_id, business_id = int(raw_id), int(payload.get("business_id"))
+    except (TypeError, ValueError):
+        raise _Reject({"till_statement_id": [STATEMENT_NOT_USABLE]}, status.HTTP_400_BAD_REQUEST) from None
+    statement = StatementUpload.objects.filter(
+        pk=statement_id, user=user, business_id=business_id, status=StatementUpload.ACCEPTED,
+    ).first()
+    if statement is None:
+        raise _Reject({"till_statement_id": [STATEMENT_NOT_USABLE]}, status.HTTP_400_BAD_REQUEST)
+
+    try:
+        expenses = Decimal(str(payload.get("monthly_expenses_kes")).strip())
+        if not expenses.is_finite() or expenses < 0:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError):
+        raise _Reject({"monthly_expenses_kes": [EXPENSES_REQUIRED]}, status.HTTP_400_BAD_REQUEST) from None
+
+    payload["monthly_expenses_kes"] = str(expenses)
+    payload["monthly_revenue_kes"] = str(statement.avg_monthly_revenue)
+    payload["monthly_profit_kes"] = str(profit_from(statement.avg_monthly_revenue, expenses))
+    return statement
+
+
 class SubmitCreditAssessmentView(APIView):
-    permission_classes = [IsOwner]
+    permission_classes = [IsOwner, ConsentRequired]
+    extra_consents = ("credit_scoring",)   # on top of the privacy notice
 
     def post(self, request):
-        serializer = CreditRequestSerializer(data=request.data)
+        payload = {k: request.data.get(k) for k in request.data.keys()}
+        try:
+            statement = _till_inputs(request.user, payload)
+        except _Reject as rejected:
+            return rejected.response
+
+        serializer = CreditRequestSerializer(data=payload)
         # Which business: the PIN and the business choice belong to the BusinessProfile, not the request.
         business_serializer = AssessmentBusinessSerializer(data={
-            k: request.data.get(k) for k in ("business_id", "business_name", "kra_pin")
+            k: payload.get(k) for k in ("business_id", "business_name", "kra_pin")
         })
         request_ok, business_ok = serializer.is_valid(), business_serializer.is_valid()
         if not (request_ok and business_ok):
@@ -280,7 +351,11 @@ class SubmitCreditAssessmentView(APIView):
             with transaction.atomic():
                 business = _business_for_submit(request.user, chosen, serializer.validated_data)
                 # Linked to the chosen (or just created) business, and named exactly as it is.
-                credit_req = serializer.save(user=request.user, business=business, business_name=business.business_name)
+                credit_req = serializer.save(
+                    user=request.user, business=business, business_name=business.business_name,
+                    revenue_source=(CreditRequest.REVENUE_TILL_STATEMENT if statement else CreditRequest.REVENUE_SELF_REPORTED),
+                    till_statement=statement,
+                )
 
                 assessment = CreditAssessment.objects.create(
                     request=credit_req,
@@ -331,7 +406,7 @@ SIMULATION_FIELDS = (
 
 class SimulateAssessmentView(APIView):
     """Scores a what-if payload. Validates exactly like assess/, but writes nothing to the database."""
-    permission_classes = [IsOwnerOrStaff]
+    permission_classes = [IsOwnerOrStaff, ConsentRequired]
     throttle_classes = [SimulateRateThrottle]
 
     def post(self, request):
@@ -353,7 +428,7 @@ class SimulateAssessmentView(APIView):
 
 class AssessmentInputsView(APIView):
     """The stored answers behind one of the signed-in user's OWN assessments (404 for anyone else's)."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ConsentRequired]
 
     def get(self, request, pk):
         a = (
@@ -376,11 +451,11 @@ class AssessmentInputsView(APIView):
 
 
 class AllAssessmentsAnalystView(APIView):
-    permission_classes = [IsAnalystOrAdmin]
+    permission_classes = [IsAnalystOrAdmin, ConsentRequired]
 
     def get(self, request):
         qs = with_superseded(CreditAssessment.objects.select_related(
-            "request", "reviewed_by"
+            "request", "request__till_statement", "reviewed_by"
         ).order_by("-created_at"))
         return Response([_payload(a) for a in qs], status=status.HTTP_200_OK)
 
@@ -393,7 +468,7 @@ class DecisionLetterView(APIView):
     Owners: their own assessments only (anyone else's is 404, so IDs are not revealed).
     Analysts and admins: any assessment; ?inline=1 opens it in the browser instead of downloading.
     Always built from the latest stored decision. Each download (not an inline preview) is logged."""
-    permission_classes = [IsOwnerOrStaff]
+    permission_classes = [IsOwnerOrStaff, ConsentRequired]
 
     def get(self, request, pk):
         qs = CreditAssessment.objects.select_related("request", "request__user", "request__business", "reviewed_by")
@@ -418,7 +493,7 @@ class DecisionLetterView(APIView):
 
 class BusinessListView(APIView):
     """GET: the signed-in owner's businesses, oldest first. POST: add a business."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ConsentRequired]
 
     def get(self, request):
         qs = BusinessProfile.objects.filter(user=request.user).order_by("created_at", "id")
@@ -440,7 +515,7 @@ class BusinessListView(APIView):
 class BusinessDetailView(APIView):
     """GET / PATCH / PUT one of the signed-in owner's businesses (404 for anyone else's).
     The KRA PIN can be changed only while the business has no assessments."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ConsentRequired]
 
     def _get(self, request, pk):
         return BusinessProfile.objects.filter(pk=pk, user=request.user).first()
@@ -472,7 +547,7 @@ class BusinessDetailView(APIView):
 class LessonViewedView(APIView):
     """POST /api/learn/viewed/ {feature_key}: records that an owner opened a lesson.
     At most one row per user, lesson and day: 201 when recorded, 200 when already recorded today."""
-    permission_classes = [IsOwner]
+    permission_classes = [IsOwner, ConsentRequired]
 
     def post(self, request):
         key = str(request.data.get("feature_key") or "").strip()
@@ -486,3 +561,36 @@ class LessonViewedView(APIView):
         except IntegrityError:
             created = False  # a parallel request recorded it first
         return Response({"recorded": created}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+REVIEW_REASON_MAX = 500
+
+
+class RequestReviewView(APIView):
+    """POST /api/scoring/assessments/<pk>/request-review/ {reason}: the owner asks for a credit analyst to
+    review this result (Data Protection Act s.35). Own assessments only (404 otherwise). 400 while an
+    earlier request is still unresolved. Allowed even after withdrawing credit-scoring consent."""
+    permission_classes = [IsOwner, ConsentRequired]
+
+    def post(self, request, pk):
+        a = CreditAssessment.objects.select_related("request", "request__till_statement", "reviewed_by").filter(
+            pk=pk, request__user=request.user).first()
+        if a is None:
+            return Response({"detail": "Not found"}, status=404)
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            return Response({"reason": ["Tell us briefly why you would like a review."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(reason) > REVIEW_REASON_MAX:
+            return Response({"reason": [f"Keep the reason to {REVIEW_REASON_MAX} characters or fewer."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if a.review_requested_at and not a.review_resolved:
+            return Response({"code": "review_already_requested",
+                             "detail": "You have already asked for a review of this assessment."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        a.review_requested_at = timezone.now()
+        a.review_request_reason = reason
+        a.save(update_fields=["review_requested_at", "review_request_reason"])
+        return Response(_payload(with_superseded(CreditAssessment.objects.filter(pk=a.pk)).select_related(
+            "request", "request__till_statement", "reviewed_by").get()))
+

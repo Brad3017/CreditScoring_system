@@ -1,27 +1,13 @@
 // "Learn" lessons, keyed by model feature key (ml_artifacts/model_metadata.json "features").
-// Content lives in src/content/lessons.<lang>.json. English is the reference; another language
-// (e.g. lessons.sw.json) only needs the same keys, and any missing lesson falls back to English.
-// There is no i18n library yet, so the language comes from <html lang> (default "en").
-const FILES = import.meta.glob("../content/lessons.*.json", { eager: true, import: "default" });
+// Content lives in src/content/lessons.en.json (the app is English only).
+import EN from "../content/lessons.en.json";
 
-function file(lang) {
-  return FILES[`../content/lessons.${lang}.json`] || null;
+export function getLessons() {
+  return EN;
 }
 
-const EN = file("en") || {};
-
-export function currentLang() {
-  if (typeof document === "undefined") return "en";
-  return (document.documentElement.lang || "en").slice(0, 2).toLowerCase();
-}
-
-export function getLessons(lang = currentLang()) {
-  const local = lang === "en" ? null : file(lang);
-  return local ? { ...EN, ...local } : EN;
-}
-
-export function getLesson(key, lang = currentLang()) {
-  return getLessons(lang)[key] || null;
+export function getLesson(key) {
+  return EN[key] || null;
 }
 
 export const hasLesson = (key) => Object.prototype.hasOwnProperty.call(EN, key);

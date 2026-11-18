@@ -11,8 +11,9 @@ import WhatIfPanel from "../components/WhatIfPanel";
 import LegacyTag from "../components/LegacyTag";
 import DecisionLetterButton from "../components/DecisionLetterButton";
 import ValidityBadge from "../components/ValidityBadge";
+import SalesSourceBadge from "../components/SalesSourceBadge";
 import { validityProps } from "../lib/validity";
-import { fetchMyAssessments, getCurrentUser } from "../lib/api";
+import { fetchMyAssessments, getCurrentUser, requestReview } from "../lib/api";
 import { t, shortDate } from "../lib/i18n";
 
 const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).toLocaleString("en-KE")}`);
@@ -26,15 +27,20 @@ export default function AssessmentResultPage() {
   // reloads), so its validity may be out of date, and the newest assessment of the business is needed
   // for "View latest assessment".
   const [mine, setMine] = useState(null);
+  // This assessment as returned by request-review, once the owner has asked for a review here.
+  const [requested, setRequested] = useState(null);
 
   useEffect(() => {
     getCurrentUser().then(setUser).catch(() => {});
     fetchMyAssessments().then((list) => setMine(Array.isArray(list) ? list : [])).catch(() => setMine([]));
   }, []);
 
-  const fresh = snapshot && mine ? mine.find((a) => a.pk === snapshot.pk) : null;
+  const fresh = requested || (snapshot && mine ? mine.find((a) => a.pk === snapshot.pk) : null);
   const assessment = snapshot && fresh
-    ? { ...snapshot, validity_status: fresh.validity_status, valid_until: fresh.valid_until, days_remaining: fresh.days_remaining }
+    ? {
+        ...snapshot,
+        ...Object.fromEntries(FRESH_FIELDS.filter((k) => k in fresh).map((k) => [k, fresh[k]])),
+      }
     : snapshot;
 
   if (!assessment) {
@@ -114,6 +120,12 @@ export default function AssessmentResultPage() {
               {t("validity.validUntil", { date: shortDate(assessment.valid_until) })}
             </p>
           )}
+          <p style={{ margin: "var(--space-3) 0 0" }}>
+            <SalesSourceBadge source={assessment.revenue_source} statement={assessment.till_statement} />
+          </p>
+          <p style={{ margin: "var(--space-3) 0 0", color: "var(--ink-2)" }}>
+            A credit analyst reviews every application before a final decision.
+          </p>
           <OutOfRangeNotice notes={outOfRange} />
         </section>
 
@@ -145,6 +157,7 @@ export default function AssessmentResultPage() {
               <DecisionLetterButton pk={assessment.pk} status={assessment.review_status} />
             </div>
           )}
+          <HumanReview assessment={assessment} onRequested={setRequested} />
         </section>
 
         <section className="panel" aria-labelledby="facts-heading">
@@ -160,6 +173,7 @@ export default function AssessmentResultPage() {
             <Fact label="Sector" value={assessment.sector || "Not recorded"} />
             <Fact label="County" value={assessment.county || "Not recorded"} />
             <Fact label="Monthly revenue" value={kes(assessment.monthly_revenue)} />
+            {assessment.monthly_expenses != null && <Fact label="Monthly business costs" value={kes(assessment.monthly_expenses)} />}
             <Fact label="Model version" value={<>{assessment.model_version || "Not recorded"}<LegacyTag record={assessment} /></>} />
           </dl>
         </section>
@@ -198,6 +212,84 @@ export default function AssessmentResultPage() {
         This assessment supports credit evaluation. It does not approve or issue a loan.
       </p>
     </AppShell>
+  );
+}
+
+// Fields taken from the freshly loaded copy: validity and the review state can change after the snapshot.
+const FRESH_FIELDS = [
+  "validity_status", "valid_until", "days_remaining", "review_status", "review_note", "reviewed_by", "reviewed_at",
+  "review_requested_at", "review_request_reason", "review_resolved",
+];
+const REASON_MAX = 500;
+
+// Data Protection Act s.35: the owner can ask for a credit analyst to look at the result again.
+function HumanReview({ assessment, onRequested }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const pending = assessment.review_requested_at && !assessment.review_resolved;
+
+  async function send(e) {
+    e.preventDefault();
+    const text = reason.trim();
+    if (!text) {
+      setError("Tell us briefly why you would like a review.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      onRequested(await requestReview(assessment.pk, text));
+      setOpen(false);
+      setReason("");
+    } catch (err) {
+      setError(err.fields?.reason || err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="no-print" style={{ marginTop: "var(--space-5)", paddingTop: "var(--space-4)", borderTop: "1px solid var(--line)" }}>
+      {pending ? (
+        <p role="status" style={{ margin: 0, fontWeight: 600 }}>Review requested on {shortDate(assessment.review_requested_at)}</p>
+      ) : (
+        <>
+          {assessment.review_resolved && (
+            <p style={{ margin: "0 0 var(--space-3)", fontWeight: 600 }}>
+              Reviewed by an analyst on {shortDate(assessment.reviewed_at)}
+            </p>
+          )}
+          {!open ? (
+            <button type="button" className="btn btn-secondary" onClick={() => setOpen(true)}>Request a review</button>
+          ) : (
+            <form onSubmit={send} style={{ display: "grid", gap: "var(--space-2)" }}>
+              <label htmlFor="review-reason" style={{ fontWeight: 600 }}>Why would you like a review?</label>
+              <textarea
+                id="review-reason"
+                value={reason}
+                maxLength={REASON_MAX}
+                rows={4}
+                required
+                aria-invalid={!!error}
+                aria-describedby="review-reason-hint"
+                onChange={(e) => { setReason(e.target.value); setError(""); }}
+                style={{ font: "inherit", padding: "var(--space-3)", width: "100%", background: "var(--surface)", color: "var(--ink)" }}
+              />
+              <p id="review-reason-hint" style={{ margin: 0, color: "var(--ink-2)", fontSize: "var(--text-xs)" }}>
+                For example, a figure that is wrong or something the score did not take into account. {reason.length}/{REASON_MAX}
+              </p>
+              {error && <p role="alert" style={{ margin: 0, color: "var(--risk-high)" }}>{error}</p>}
+              <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+                <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? "Sending…" : "Send request"}</button>
+                <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => { setOpen(false); setError(""); }}>Cancel</button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

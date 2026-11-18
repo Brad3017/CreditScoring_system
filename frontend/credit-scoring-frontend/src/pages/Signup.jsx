@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signup, saveSession, clearSession } from "../lib/api";
 import AuthShell, { Field, PasswordField, ErrorNote } from "../components/AuthShell";
+import { ConsentCheck, PRIVACY_SUMMARY, PrivacyLink, useConsentTexts } from "../components/Consent";
 
 const HOME_FOR_ROLE = { owner: "/home", analyst: "/analyst", admin: "/console" };
 
@@ -12,7 +13,11 @@ export default function Signup() {
     email: "",
     password: "",
     confirm: "",
+    privacy_notice_accepted: false,
+    communications_opt_in: false,
   });
+  const { texts, error: textError } = useConsentTexts();
+  const setFlag = (name) => (value) => setForm((f) => ({ ...f, [name]: value }));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -34,6 +39,10 @@ export default function Signup() {
       setError("Password must be at least 8 characters.");
       return;
     }
+    if (!form.privacy_notice_accepted) {
+      setError("Please confirm that you have read the privacy notice.");
+      return;
+    }
 
     setBusy(true);
     // Whoever was signed in before (e.g. an admin testing in this browser) is signed out first,
@@ -44,6 +53,8 @@ export default function Signup() {
         full_name: form.full_name,
         email: form.email,
         password: form.password,
+        privacy_notice_accepted: form.privacy_notice_accepted,
+        communications_opt_in: form.communications_opt_in,
       });
       // The new account's own tokens, role and user, all together.
       saveSession(data.access, data.refresh, data.user?.role, data.user);
@@ -58,7 +69,7 @@ export default function Signup() {
   return (
     <AuthShell title="Create your account" subtitle="Set up your profile, then run your first assessment.">
       <form onSubmit={submit}>
-        <ErrorNote>{error}</ErrorNote>
+        <ErrorNote>{error || textError}</ErrorNote>
 
         <Field
           label="Full name"
@@ -106,10 +117,23 @@ export default function Signup() {
           </p>
         )}
 
+        <div style={{ margin: "var(--space-6) 0 var(--space-4)", paddingTop: "var(--space-5)", borderTop: "1px solid var(--line)" }}>
+          <p style={{ margin: "0 0 var(--space-4)", fontSize: "var(--text-sm)" }}>
+            {PRIVACY_SUMMARY}{" "}
+            <PrivacyLink />
+          </p>
+          <ConsentCheck id="su-privacy" checked={form.privacy_notice_accepted} onChange={setFlag("privacy_notice_accepted")} required disabled={!texts}>
+            {texts?.privacy_notice || "Loading…"}
+          </ConsentCheck>
+          <ConsentCheck id="su-comms" checked={form.communications_opt_in} onChange={setFlag("communications_opt_in")} disabled={!texts}>
+            {texts?.communications || "Loading…"}
+          </ConsentCheck>
+        </div>
+
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={busy}
+          disabled={busy || !form.privacy_notice_accepted}
           style={{ width: "100%", justifyContent: "center", marginTop: "var(--space-2)" }}
         >
           {busy ? "Creating account…" : "Create account"}

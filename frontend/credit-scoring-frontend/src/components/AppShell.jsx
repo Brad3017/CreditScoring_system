@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Building2 } from "lucide-react";
+import { ChevronDown, LogOut, Building2, ShieldCheck } from "lucide-react";
 import { clearSession, getSessionUser } from "../lib/api";
 
 // Business profile lives in the account menu, not here.
@@ -155,6 +155,15 @@ function AccountMenu({ user }) {
               onClick={() => setOpen(false)}
             >
               <Building2 size={18} aria-hidden="true" /> Business profile
+            </Link>
+            <Link
+              to="/account/privacy"
+              role="menuitem"
+              className="app-menu-item"
+              aria-current={location.pathname === "/account/privacy" ? "page" : undefined}
+              onClick={() => setOpen(false)}
+            >
+              <ShieldCheck size={18} aria-hidden="true" /> Privacy and consent
             </Link>
             <button type="button" role="menuitem" className="app-menu-item app-menu-signout" onClick={signOut}>
               <LogOut size={18} aria-hidden="true" /> Sign out

@@ -4,6 +4,9 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from .consent import history_row
+from .models import ConsentRecord
+from .permissions import ConsentRequired
 
 User = get_user_model()
 ROLES = {"owner", "analyst", "admin"}
@@ -29,7 +32,7 @@ def _row(u):
 
 
 class AdminUserListView(APIView):
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminRole, ConsentRequired]
 
     def get(self, request):
         users = User.objects.annotate(n_requests=Count("credit_requests")).order_by("-date_joined")
@@ -43,7 +46,7 @@ class AdminUserListView(APIView):
 
 class AdminUserUpdateView(APIView):
     """Change a user's role or switch the account on or off. Nothing else is editable here."""
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminRole, ConsentRequired]
 
     def patch(self, request, pk):
         try:
@@ -73,3 +76,14 @@ class AdminUserUpdateView(APIView):
 
         u.save(update_fields=changed)
         return Response(_row(u))
+
+
+class AdminUserConsentsView(APIView):
+    """GET /api/auth/admin/users/<pk>/consents/: the user's full consent history, newest first."""
+    permission_classes = [IsAdminRole, ConsentRequired]
+
+    def get(self, request, pk):
+        if not User.objects.filter(pk=pk).exists():
+            return Response({"detail": "Not found"}, status=404)
+        rows = ConsentRecord.objects.filter(user_id=pk).order_by("-granted_at", "-id")
+        return Response([history_row(r) for r in rows])

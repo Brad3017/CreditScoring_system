@@ -12,6 +12,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from accounts.permissions import ConsentRequired
 
 from .models import CreditAssessment, LessonView
 from .validity import get_validity, with_superseded
@@ -54,7 +55,7 @@ def _pct(num, den):
 
 
 class AdminOverviewView(APIView):
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminRole, ConsentRequired]
 
     def get(self, request):
         qs = _queryset(request)
@@ -121,7 +122,7 @@ class AdminOverviewView(APIView):
 
 class AdminFairnessView(APIView):
     """Compares outcomes across groups. This is a screening tool, not proof of bias."""
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminRole, ConsentRequired]
     DIMENSIONS = [
         ("sector", "Sector"),
         ("county", "County"),
@@ -172,7 +173,7 @@ class AdminFairnessView(APIView):
 
 
 class AdminModelView(APIView):
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminRole, ConsentRequired]
 
     @staticmethod
     def _load(name):
@@ -214,7 +215,7 @@ def _safe(value):
 
 
 class AdminExportView(APIView):
-    permission_classes = [IsAdminRole]
+    permission_classes = [IsAdminRole, ConsentRequired]
 
     def get(self, request):
         response = HttpResponse(content_type="text/csv")
@@ -224,8 +225,9 @@ class AdminExportView(APIView):
             "id", "submitted", "business", "sector", "county", "legal_status", "monthly_revenue_kes",
             "credit_score", "probability_of_default", "risk_category", "recommended_limit_kes",
             "review_status", "reviewed_by", "reviewed_at", "review_note", "valid_until", "validity_status",
+            "revenue_source", "till_number", "monthly_expenses_kes",
         ])
-        for a in with_superseded(_queryset(request)).order_by("-created_at"):
+        for a in with_superseded(_queryset(request).select_related("request__till_statement")).order_by("-created_at"):
             v = get_validity(a)
             r = a.request
             w.writerow([
@@ -235,5 +237,7 @@ class AdminExportView(APIView):
                 _safe(a.reviewed_by.full_name or a.reviewed_by.email) if a.reviewed_by else "",
                 a.reviewed_at.isoformat() if a.reviewed_at else "", _safe(a.review_note),
                 v["valid_until"].isoformat() if v["valid_until"] else "", v["status"],
+                r.revenue_source, r.till_statement.shortcode if r.till_statement_id else "",
+                r.monthly_expenses_kes if r.monthly_expenses_kes is not None else "",
             ])
         return response

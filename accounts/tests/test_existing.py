@@ -9,6 +9,8 @@ from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
+
+from accounts.testing import consenting_user
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 User = get_user_model()
@@ -20,7 +22,7 @@ NID_DUP_MSG = "This national ID number is already registered to another account.
 class MeProfileFieldsTests(TestCase):
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.user = User.objects.create_user(username="u1", email="u1@test.ke", password="x", role="owner")
+        self.user = consenting_user(username="u1", email="u1@test.ke", password="x", role="owner")
         self.client.force_authenticate(self.user)
 
     def test_patch_saves_and_returns_new_fields(self):
@@ -60,7 +62,7 @@ class MeProfileFieldsTests(TestCase):
             self.assertEqual(res.json()["phone"], [PHONE_MSG])
 
     def test_duplicate_national_id_rejected_and_blanks_do_not_clash(self):
-        other = User.objects.create_user(username="u2", email="u2@test.ke", password="x", role="owner", national_id="12345678")
+        other = consenting_user(username="u2", email="u2@test.ke", password="x", role="owner", national_id="12345678")
         res = self.client.patch(ME, {"national_id": "12345678"}, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.json()["national_id"], [NID_DUP_MSG])
@@ -78,7 +80,7 @@ class TokenRefreshTests(TestCase):
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.user = User.objects.create_user(username="r1", email="r1@test.ke", password="x", role="owner")
+        self.user = consenting_user(username="r1", email="r1@test.ke", password="x", role="owner")
 
     def test_expired_access_is_401_then_refresh_gives_a_working_token(self):
         expired = AccessToken.for_user(self.user)
@@ -104,7 +106,7 @@ class TokenRefreshTests(TestCase):
 
 class LoginTests(TestCase):
     def test_login_returns_user_and_records_last_login(self):
-        User.objects.create_user(username="l1", email="l1@test.ke", password="Secret-123", role="analyst", full_name="Lee One")
+        consenting_user(username="l1", email="l1@test.ke", password="Secret-123", role="analyst", full_name="Lee One")
         res = APIClient(HTTP_HOST="localhost").post(
             "/api/auth/login/", {"email": "l1@test.ke", "password": "Secret-123"}, format="json"
         )
@@ -120,8 +122,8 @@ class AdminRoleStabilityTests(TestCase):
     def test_admin_role_unchanged_after_analyst_endpoints(self):
         from scoring.models import CreditAssessment, CreditRequest
 
-        admin = User.objects.create_user(username="ad", email="ad@test.ke", password="x", role="admin")
-        owner = User.objects.create_user(username="ow", email="ow@test.ke", password="x", role="owner")
+        admin = consenting_user(username="ad", email="ad@test.ke", password="x", role="admin")
+        owner = consenting_user(username="ow", email="ow@test.ke", password="x", role="owner")
         req = CreditRequest.objects.create(user=owner, business_name="Biz", monthly_profit_kes=1000)
         a = CreditAssessment.objects.create(
             request=req, probability_of_default=0.5, credit_score=575,
@@ -147,7 +149,7 @@ class ContactMigrationTests(TestCase):
         planted = [("", "0712 345 678", ""), ("111", "garbage", "Nairobi"), ("222", "+254112345678", "Mombasa")]
         pks = []
         for i, (nid, phone, county) in enumerate(planted):
-            u = User.objects.create_user(username=f"m{i}", email=f"m{i}@test.ke", password="x")
+            u = consenting_user(username=f"m{i}", email=f"m{i}@test.ke", password="x")
             # .update() bypasses User.save(), planting the raw legacy values.
             User.objects.filter(pk=u.pk).update(national_id=nid, phone=phone, county=county)
             pks.append(u.pk)

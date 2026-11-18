@@ -43,14 +43,28 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+PRIVACY_NOTICE_REQUIRED = "Please confirm that you have read the privacy notice."
+
+
 class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
+    # Consent (accounts/consent_texts.py). The view writes the ConsentRecords once the user exists.
+    privacy_notice_accepted = serializers.BooleanField(
+        write_only=True, error_messages={"required": PRIVACY_NOTICE_REQUIRED})
+    communications_opt_in = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = User
-        fields = ["email", "password", "full_name"]
+        fields = ["email", "password", "full_name", "privacy_notice_accepted", "communications_opt_in"]
+
+    def validate_privacy_notice_accepted(self, value):
+        if value is not True:
+            raise serializers.ValidationError(PRIVACY_NOTICE_REQUIRED)
+        return value
 
     def create(self, validated_data):
+        validated_data.pop("privacy_notice_accepted", None)
+        validated_data.pop("communications_opt_in", None)
         password = validated_data.pop("password")
         
         # Populate username with email if model requires username
@@ -118,7 +132,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         refresh = self.get_token(user)
         update_last_login(None, user)  # simplejwt does not do this for a custom validate()
 
+        from .consent import missing_required
         return {
+            "missing_consents": missing_required(user),
             "refresh": str(refresh),
             "access": str(refresh.access_token),
             "role": getattr(user, "role", "owner"),

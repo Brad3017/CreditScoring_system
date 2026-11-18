@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import SignupView, LoginView, MeView, CustomLoginView
-from .admin_views import AdminUserListView, AdminUserUpdateView
+from .admin_views import AdminUserListView, AdminUserUpdateView, AdminUserConsentsView
 
 urlpatterns = [
     path('signup/', SignupView.as_view(), name='signup'),
@@ -10,4 +10,5 @@ urlpatterns = [
     path('me/', MeView.as_view(), name='me'),
     path('admin/users/', AdminUserListView.as_view(), name='admin_users'),
     path('admin/users/<int:pk>/', AdminUserUpdateView.as_view(), name='admin_user_update'),
+    path('admin/users/<int:pk>/consents/', AdminUserConsentsView.as_view(), name='admin_user_consents'),
 ]

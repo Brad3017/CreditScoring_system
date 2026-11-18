@@ -8,10 +8,13 @@ import LegacyTag from "../../components/LegacyTag";
 import AffordabilityPanel from "../../components/AffordabilityPanel";
 import DecisionLetterButton from "../../components/DecisionLetterButton";
 import ValidityBadge from "../../components/ValidityBadge";
+import SalesSourceBadge from "../../components/SalesSourceBadge";
+import { TillStatementPanel } from "../../components/TillStatement";
 import { validityProps, isScoreValid } from "../../lib/validity";
 import { t } from "../../lib/i18n";
 import { card, cardHead, cardTitle, muted, inputStyle, kes, fmtDateTime } from "../../components/analystUi";
 import { getCurrentUser, fetchAssessmentDetail, reviewAssessment } from "../../lib/api";
+import { ReviewRequestedBadge } from "../../components/ReviewRequestedBadge";
 
 function Row({ label, value }) {
   return (
@@ -61,6 +64,10 @@ export default function AssessmentReview() {
       if (status && status !== "valid") {
         setA((prev) => ({ ...prev, validity_status: status, valid_until: e.fields.valid_until || prev.valid_until, days_remaining: null }));
       }
+      // The owner withdrew credit-scoring consent while this page was open: show the banner, disable Approve.
+      if (e.code === "consent_withdrawn" || e.code === "consent_missing") {
+        setA((prev) => ({ ...prev, consent_block: { code: e.code, detail: e.message } }));
+      }
     } finally {
       setSaving(false);
     }
@@ -68,7 +75,9 @@ export default function AssessmentReview() {
 
   const r = a?.request;
   const needsNote = !note.trim() || note.trim().length < 5;
-  const canApprove = isScoreValid(a);
+  const consentBlock = a?.consent_block || null;
+  const canApprove = isScoreValid(a) && !consentBlock;
+  const openReview = Boolean(a?.review_requested_at && !a?.review_resolved);
 
   return (
     <AnalystLayout
@@ -79,6 +88,28 @@ export default function AssessmentReview() {
     >
       {error && <p role="alert" style={{ color: "var(--risk-high)" }}>{error}</p>}
       {!a && !error && <p style={{ color: "var(--ink-2)" }}>Loading…</p>}
+
+      {consentBlock && (
+        <p role="alert" style={{ margin: 0, padding: "var(--space-4) var(--space-5)", border: "1px solid var(--risk-high)", borderRadius: "var(--radius)", background: "var(--risk-high-soft)", color: "var(--risk-high)", fontWeight: 600 }}>
+          {consentBlock.detail} You can still decline it or ask for more information.
+        </p>
+      )}
+
+      {a?.review_requested_at && (
+        <section style={{ ...card, borderColor: openReview ? "var(--risk-moderate)" : undefined }} aria-labelledby="rr-heading">
+          <div style={cardHead}>
+            <h2 id="rr-heading" style={cardTitle}>The owner asked for a review</h2>
+            {openReview ? <ReviewRequestedBadge /> : <span style={muted}>Resolved</span>}
+          </div>
+          <p style={{ ...muted, marginTop: 0 }}>Requested on {fmtDateTime(a.review_requested_at)}</p>
+          <blockquote style={{ margin: 0, padding: "var(--space-3) var(--space-4)", borderLeft: "3px solid var(--line-strong)", background: "var(--paper)", whiteSpace: "pre-wrap" }}>
+            {a.review_request_reason}
+          </blockquote>
+          {openReview && (
+            <p style={{ ...muted, marginBottom: 0 }}>Recording a decision below resolves this request.</p>
+          )}
+        </section>
+      )}
 
       {a && (
         <div className="two-col" style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)", gap: "var(--space-6)", alignItems: "start" }}>
@@ -92,11 +123,16 @@ export default function AssessmentReview() {
                 </span>
               </div>
               <RiskScale score={a.credit_score} riskCategory={a.risk_category} isLegacy={a.is_legacy} modelVersion={a.model_version} />
+              <p style={{ margin: "var(--space-4) 0 0" }}>
+                <SalesSourceBadge source={a.revenue_source} statement={a.till_statement} />
+              </p>
               <dl style={{ margin: "var(--space-5) 0 0" }}>
                 <Row label="Probability of default" value={`${(a.probability_of_default * 100).toFixed(1)}%`} />
                 <Row label="Model version" value={<>{a.model_version || "Not recorded"}<LegacyTag record={a} /></>} />
               </dl>
             </section>
+
+            {a.till_statement && <TillStatementPanel statement={a.till_statement} expenses={a.monthly_expenses} />}
 
             <section style={card}>
               <div style={cardHead}><h2 style={cardTitle}>What shaped this result</h2></div>
@@ -116,7 +152,8 @@ export default function AssessmentReview() {
                 <Row label="KRA PIN" value={a.business?.kra_pin || "Not provided"} />
                 <Row label="Loan requested" value={`${kes(r.loan_amount)} over ${r.tenure_months} months`} />
                 <Row label="Loan purpose" value={a.loan_purpose || "Not recorded"} />
-                <Row label="Monthly revenue" value={kes(a.monthly_revenue)} />
+                <Row label="Monthly revenue" value={<>{kes(a.monthly_revenue)} <SalesSourceBadge source={a.revenue_source} compact /></>} />
+                {r.monthly_expenses_kes != null && <Row label="Monthly business costs (self-reported)" value={kes(r.monthly_expenses_kes)} />}
                 <Row label="Monthly profit" value={kes(r.monthly_profit_kes)} />
                 <Row label="Days to pay suppliers" value={r.days_payable_outstanding} />
                 <Row label="Cash-flow stability (1–5)" value={r.cashflow_stability} />
@@ -159,7 +196,7 @@ export default function AssessmentReview() {
                 aria-describedby={canApprove ? undefined : "approve-blocked"} onClick={() => decide("approved")}>Approve</button>
               {!canApprove && (
                 <p id="approve-blocked" style={{ ...muted, margin: 0, color: "var(--risk-high)", fontWeight: 600 }}>
-                  {t("validity.approveBlocked")}
+                  {consentBlock ? consentBlock.detail : t("validity.approveBlocked")}
                 </p>
               )}
               <button type="button" className="btn btn-secondary" disabled={saving || needsNote} onClick={() => decide("referred")}>Ask for more information</button>

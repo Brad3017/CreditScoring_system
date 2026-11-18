@@ -5,6 +5,9 @@ import StatusPill from "../../components/StatusPill";
 import { riskKeyFromCategory } from "../../components/RiskScale";
 import LegacyTag from "../../components/LegacyTag";
 import ValidityBadge from "../../components/ValidityBadge";
+import SalesSourceBadge from "../../components/SalesSourceBadge";
+import { ReviewRequestedBadge } from "../../components/ReviewRequestedBadge";
+import { t } from "../../lib/i18n";
 import { validityProps } from "../../lib/validity";
 import { card, muted, inputStyle, th, td } from "../../components/analystUi";
 import { getCurrentUser, fetchAllAssessments } from "../../lib/api";
@@ -15,6 +18,9 @@ const RISK_TOKEN = { low: "--risk-low", moderate: "--risk-moderate", high: "--ri
 // server's order (newest first) is kept: Array.prototype.sort is stable.
 const VALIDITY_RANK = { valid: 0, expired: 1, superseded: 2 };
 const validityRank = (r) => VALIDITY_RANK[r.validity_status] ?? 0;
+// The owner asked for a human review (Data Protection Act s.35) and no decision has been recorded since.
+// These rows come first, and also show under Pending even if an earlier decision was recorded.
+const openReview = (r) => Boolean(r.review_requested_at && !r.review_resolved);
 
 export default function AssessmentRequests() {
   const navigate = useNavigate();
@@ -42,18 +48,21 @@ export default function AssessmentRequests() {
 
   const counts = useMemo(() => {
     const c = { all: rows.length, pending: 0, approved: 0, declined: 0, referred: 0 };
-    rows.forEach((r) => { c[r.review_status] = (c[r.review_status] || 0) + 1; });
+    rows.forEach((r) => {
+      c[r.review_status] = (c[r.review_status] || 0) + 1;
+      if (openReview(r) && r.review_status !== "pending") c.pending += 1;
+    });
     return c;
   }, [rows]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
-      if (status !== "all" && r.review_status !== status) return false;
+      if (status !== "all" && r.review_status !== status && !(status === "pending" && openReview(r))) return false;
       if (risk !== "all" && riskKeyFromCategory(r.risk_category) !== risk) return false;
       if (q && !`${r.business_name} ${r.id} ${r.county} ${r.sector}`.toLowerCase().includes(q)) return false;
       return true;
-    }).sort((a, b) => validityRank(a) - validityRank(b));
+    }).sort((a, b) => (openReview(b) - openReview(a)) || (validityRank(a) - validityRank(b)));
   }, [rows, status, risk, query]);
 
   const tabs = [
@@ -108,7 +117,7 @@ export default function AssessmentRequests() {
                 <tr>
                   <th style={th}>Business</th><th style={th}>Submitted</th>
                   <th style={th}>Score</th><th style={th}>Risk</th>
-                  <th style={th}>Status</th><th style={th}>Validity</th><th style={th}><span className="sr-only">Action</span></th>
+                  <th style={th}>Status</th><th style={th}>Validity</th><th style={th}>{t("till.salesSource")}</th><th style={th}><span className="sr-only">Action</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -123,11 +132,17 @@ export default function AssessmentRequests() {
                       <td style={td}>{r.created_at}</td>
                       <td style={td}><span className="num" style={{ fontFamily: "var(--font-display)", fontSize: "var(--text-lg)" }}>{r.credit_score}</span></td>
                       <td style={{ ...td, color: k ? `var(${RISK_TOKEN[k]})` : "inherit", fontWeight: 600 }}>{k ? RISK_LABEL[k] : "–"}</td>
-                      <td style={td}><StatusPill status={r.review_status} /></td>
+                      <td style={td}>
+                        <div style={{ display: "grid", gap: "var(--space-1)", justifyItems: "start" }}>
+                          <StatusPill status={r.review_status} />
+                          {openReview(r) && <ReviewRequestedBadge />}
+                        </div>
+                      </td>
                       <td style={td}><ValidityBadge {...validityProps(r)} /></td>
+                      <td style={td}><SalesSourceBadge source={r.revenue_source} statement={r.till_statement} compact /></td>
                       <td style={{ ...td, textAlign: "right" }}>
                         <button type="button" className="btn btn-secondary" onClick={() => navigate(`/analyst/requests/${r.pk}`)}>
-                          {r.review_status === "pending" ? "Review" : "Open"}
+                          {r.review_status === "pending" || openReview(r) ? "Review" : "Open"}
                         </button>
                       </td>
                     </tr>

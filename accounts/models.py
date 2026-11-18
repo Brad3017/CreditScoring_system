@@ -77,3 +77,37 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.email} ({self.role})"
+
+
+class ConsentRecord(models.Model):
+    """One grant of consent for one purpose (texts in accounts/consent_texts.py).
+
+    Rows are never deleted or edited, except to set withdrawn_at; granting again adds a new row. That
+    history is the proof that consent was obtained (Data Protection Act 2019 s.32, General Regulations
+    2021 reg. 4). `version` is CONSENT_VERSION at the time, i.e. the text the user saw."""
+
+    PURPOSE_CHOICES = [
+        ("privacy_notice", "Privacy notice"),
+        ("credit_scoring", "Credit scoring"),
+        ("statement_processing", "Till statement reading"),
+        ("communications", "Email updates"),
+        ("staff_confidentiality", "Staff confidentiality"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="consents")
+    purpose = models.CharField(max_length=32, choices=PURPOSE_CHOICES)
+    version = models.CharField(max_length=16)
+    granted_at = models.DateTimeField()
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True, default="")
+    # e.g. the StatementUpload id for statement_processing.
+    reference = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "purpose"], name="consent_user_purpose_idx")]
+        ordering = ["-granted_at", "-id"]
+
+    def __str__(self):
+        state = f"withdrawn {self.withdrawn_at:%Y-%m-%d}" if self.withdrawn_at else "active"
+        return f"{self.user.email} - {self.purpose} v{self.version} - {state}"

@@ -4,6 +4,11 @@ import LoadError from "../components/LoadError";
 import { COUNTIES } from "../lib/counties";
 import { fetchMe, fetchBusinesses, updateMe, createBusiness, updateBusiness } from "../lib/api";
 import { KRA_PIN_MESSAGE, KRA_PIN_PLACEHOLDER, isValidKraPin, normaliseKraPin } from "../lib/kraPin";
+import { t } from "../lib/i18n";
+
+// Lipa na M-Pesa till number: digits only, 5 to 7 of them (same rule as the server, scoring.models).
+const TILL_RE = /^\d{5,7}$/;
+const TILL_MESSAGE = "Enter the till number in digits only (5 to 7 digits).";
 
 // One business = one profile = one KRA PIN. An owner may have several businesses.
 const EMPTY_BUSINESS = {
@@ -15,6 +20,7 @@ const EMPTY_BUSINESS = {
   legal_status: "Sole",
   business_age_years: "",
   employees_count: "",
+  till_number: "",
 };
 
 const PIN_LOCKED_NOTE = "Contact support to change a registered KRA PIN.";
@@ -45,6 +51,7 @@ const businessFrom = (p) => ({
   legal_status: p.legal_status || "Sole",
   business_age_years: p.business_age_years ?? "",
   employees_count: p.employees_count ?? "",
+  till_number: p.till_number || "",
 });
 
 export default function BusinessProfilePage() {
@@ -230,6 +237,7 @@ function BusinessForm({ business, onSaved, onCancel }) {
     if (!COUNTIES.includes(form.county)) found.county = "Choose a county from the list.";
     if (form.business_age_years === "" || Number(form.business_age_years) < 0) found.business_age_years = "Enter years trading, 0 or more.";
     if (form.employees_count === "" || Number(form.employees_count) < 0) found.employees_count = "Enter the number of employees.";
+    if (form.till_number.trim() && !TILL_RE.test(form.till_number.trim())) found.till_number = TILL_MESSAGE;
     setErrors(found);
     setNotice("");
     setSaveError("");
@@ -242,6 +250,7 @@ function BusinessForm({ business, onSaved, onCancel }) {
       business_name: form.business_name.trim(),
       business_age_years: Number(form.business_age_years),
       employees_count: Number(form.employees_count),
+      till_number: form.till_number.trim(),
     };
     // A registered PIN is never sent back; the server refuses any change to it anyway.
     if (pinLocked) delete data.kra_pin;
@@ -290,6 +299,9 @@ function BusinessForm({ business, onSaved, onCancel }) {
           options={[["Sole", "Sole proprietorship"], ["Partnership", "Partnership"], ["Limited", "Limited company"]]} />
         <Field label="Years trading" name="business_age_years" id={`${idp}-business_age_years`} type="number" min="0" value={form.business_age_years} onChange={onChange} error={errors.business_age_years} />
         <Field label="Number of employees" name="employees_count" id={`${idp}-employees_count`} type="number" min="0" value={form.employees_count} onChange={onChange} error={errors.employees_count} />
+        <Field label={t("till.number")} name="till_number" id={`${idp}-till_number`} value={form.till_number} onChange={onChange} error={errors.till_number}
+          inputMode="numeric" pattern="[0-9]*" maxLength={7} autoComplete="off" spellCheck={false}
+          hint="Your Lipa na M-Pesa till number, if you have one. It is filled in from your first till statement." />
       </div>
       <SaveRow saving={saving} label={isNew ? "Add business" : "Save business"} notice={notice} error={saveError}
         extra={isNew && <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>Cancel</button>} />

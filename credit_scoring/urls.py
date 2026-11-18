@@ -18,10 +18,17 @@ from django.contrib import admin
 from django.urls import path, include
 
 from scoring.views import LessonViewedView
+from scoring.statement_views import StatementUploadView, StatementDetailView
+from accounts.consent_views import ConsentTextsView, ConsentListView, ConsentWithdrawView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("accounts.urls")),
     path('api/scoring/', include('scoring.urls')),
     path("api/learn/viewed/", LessonViewedView.as_view(), name="lesson_viewed"),
+    path("api/statements/upload/", StatementUploadView.as_view(), name="statement_upload"),
+    path("api/statements/<int:pk>/", StatementDetailView.as_view(), name="statement_detail"),
+    path("api/consents/texts/", ConsentTextsView.as_view(), name="consent_texts"),
+    path("api/consents/", ConsentListView.as_view(), name="consents"),
+    path("api/consents/<str:purpose>/withdraw/", ConsentWithdrawView.as_view(), name="consent_withdraw"),
 ]

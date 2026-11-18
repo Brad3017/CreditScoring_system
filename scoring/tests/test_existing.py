@@ -18,11 +18,13 @@ from django.utils import timezone
 from pypdf import PdfReader  # test-only: requirements-dev.txt
 from rest_framework.test import APIClient
 
-from . import letters, services
-from .models import BusinessProfile, CreditAssessment, CreditRequest, LetterDownload
-from .serializers import CreditRequestSerializer
-from .validity import get_validity, short_date, with_superseded
-from .views import LETTER_PENDING_MESSAGE
+from accounts.testing import consenting_user
+
+from scoring import letters, services
+from scoring.models import BusinessProfile, CreditAssessment, CreditRequest, LetterDownload
+from scoring.serializers import CreditRequestSerializer
+from scoring.validity import get_validity, short_date, with_superseded
+from scoring.views import LETTER_PENDING_MESSAGE
 
 User = get_user_model()
 
@@ -304,7 +306,7 @@ class SubmitEndpointTests(TestCase):
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="owner", email="owner@test.ke", password="x", role="owner")
+        self.owner = consenting_user(username="owner", email="owner@test.ke", password="x", role="owner")
 
     def test_owner_gets_v3_assessment(self):
         self.client.force_authenticate(self.owner)
@@ -330,7 +332,7 @@ class SubmitEndpointTests(TestCase):
         self.assertEqual(CreditRequest.objects.count(), 0)
 
     def test_staff_cannot_submit(self):
-        analyst = User.objects.create_user(username="an", email="an@test.ke", password="x", role="analyst")
+        analyst = consenting_user(username="an", email="an@test.ke", password="x", role="analyst")
         self.client.force_authenticate(analyst)
         self.assertEqual(self.client.post(self.url, LOW_RISK, format="json").status_code, 403)
 
@@ -343,8 +345,8 @@ class ListQueryCountTests(TestCase):
         from django.test.utils import CaptureQueriesContext
         self.capture = lambda: CaptureQueriesContext(connection)
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="o", email="o@test.ke", password="x", role="owner")
-        self.analyst = User.objects.create_user(username="a", email="a@test.ke", password="x", role="analyst", full_name="Ann Analyst")
+        self.owner = consenting_user(username="o", email="o@test.ke", password="x", role="owner")
+        self.analyst = consenting_user(username="a", email="a@test.ke", password="x", role="analyst", full_name="Ann Analyst")
 
     def add(self, n):
         for i in range(n):
@@ -380,11 +382,11 @@ class SimulateEndpointTests(TestCase):
         from django.core.cache import cache
         cache.clear()  # throttle counts live in the cache
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="sim", email="sim@test.ke", password="x", role="owner")
-        self.other = User.objects.create_user(username="sim2", email="sim2@test.ke", password="x", role="owner")
+        self.owner = consenting_user(username="sim", email="sim@test.ke", password="x", role="owner")
+        self.other = consenting_user(username="sim2", email="sim2@test.ke", password="x", role="owner")
 
     def counts(self):
-        from .models import BusinessProfile
+        from scoring.models import BusinessProfile
         return CreditRequest.objects.count(), CreditAssessment.objects.count(), BusinessProfile.objects.count()
 
     def test_returns_score_and_saves_nothing(self):
@@ -403,7 +405,7 @@ class SimulateEndpointTests(TestCase):
         self.assertEqual(self.counts(), before)
 
     def test_staff_may_simulate(self):
-        analyst = User.objects.create_user(username="sa", email="sa@test.ke", password="x", role="analyst")
+        analyst = consenting_user(username="sa", email="sa@test.ke", password="x", role="analyst")
         self.client.force_authenticate(analyst)
         self.assertEqual(self.client.post(self.url, LOW_RISK, format="json").status_code, 200)
 
@@ -466,8 +468,8 @@ class KraPinTests(TestCase):
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="pin1", email="pin1@test.ke", password="x", role="owner")
-        self.other = User.objects.create_user(username="pin2", email="pin2@test.ke", password="x", role="owner")
+        self.owner = consenting_user(username="pin1", email="pin1@test.ke", password="x", role="owner")
+        self.other = consenting_user(username="pin2", email="pin2@test.ke", password="x", role="owner")
 
     def add_business(self, user, pin, **changes):
         self.client.force_authenticate(user)
@@ -520,7 +522,7 @@ class KraPinTests(TestCase):
         self.client.force_authenticate(self.owner)
         created = self.client.post(self.assess_url, {**LOW_RISK, "kra_pin": "P051234567X"}, format="json").json()
         self.assertNotIn("kra_pin", str(created))
-        analyst = User.objects.create_user(username="pa", email="pa@test.ke", password="x", role="analyst")
+        analyst = consenting_user(username="pa", email="pa@test.ke", password="x", role="analyst")
         self.client.force_authenticate(analyst)
         detail = self.client.get(f"/api/scoring/assessments/{created['pk']}/").json()
         self.assertEqual(detail["business"]["kra_pin"], "P051234567X")
@@ -531,7 +533,7 @@ class KraPinTests(TestCase):
         migration = importlib.import_module("scoring.migrations.0008_normalise_kra_pin")
         rows = {}
         for i, raw in enumerate(["p051234567x", "A123456789B", "", "P051234567X", "P111111111Q"]):
-            u = User.objects.create_user(username=f"m{i}", email=f"m{i}@test.ke", password="x", role="owner")
+            u = consenting_user(username=f"m{i}", email=f"m{i}@test.ke", password="x", role="owner")
             p = BusinessProfile.objects.create(user=u, **self.BUSINESS)
             # .update() bypasses save(), planting the raw legacy value.
             BusinessProfile.objects.filter(pk=p.pk).update(kra_pin=raw)
@@ -557,8 +559,8 @@ class BusinessLinkTests(TestCase):
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="bl1", email="bl1@test.ke", password="x", role="owner")
-        self.other = User.objects.create_user(username="bl2", email="bl2@test.ke", password="x", role="owner")
+        self.owner = consenting_user(username="bl1", email="bl1@test.ke", password="x", role="owner")
+        self.other = consenting_user(username="bl2", email="bl2@test.ke", password="x", role="owner")
 
     def submit(self, user, **changes):
         self.client.force_authenticate(user)
@@ -740,31 +742,19 @@ class LessonContentTests(SimpleTestCase):
             self.assertEqual(len(lesson["steps"]), 3, key)
             self.assertTrue(all(isinstance(x, str) and x.strip() for x in lesson["steps"]), key)
 
-    def test_translations_use_the_same_keys_and_shape(self):
-        # e.g. lessons.sw.json, added later: only keys that exist in English, same five fields.
-        english = set(self.load("lessons.en.json"))
-        for path in CONTENT_DIR.glob("lessons.*.json"):
-            if path.name == "lessons.en.json":
-                continue
-            other = self.load(path.name)
-            self.assertLessEqual(set(other), english, path.name)
-            for key, lesson in other.items():
-                self.assertEqual(set(lesson), LESSON_FIELDS, f"{path.name}:{key}")
-                self.assertEqual(len(lesson["steps"]), 3, f"{path.name}:{key}")
-
 
 class LessonViewTests(TestCase):
     url = "/api/learn/viewed/"
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="lv", email="lv@test.ke", password="x", role="owner")
+        self.owner = consenting_user(username="lv", email="lv@test.ke", password="x", role="owner")
 
     def post(self, key="late_payment_history"):
         return self.client.post(self.url, {"feature_key": key}, format="json")
 
     def test_owner_recorded_once_per_day(self):
-        from .models import LessonView
+        from scoring.models import LessonView
         self.client.force_authenticate(self.owner)
         self.assertEqual(self.post().status_code, 201)
         self.assertEqual(self.post().status_code, 200)   # same lesson, same day: not recorded again
@@ -774,7 +764,7 @@ class LessonViewTests(TestCase):
     def test_next_day_is_recorded_again(self):
         import datetime
         from unittest import mock
-        from .models import LessonView
+        from scoring.models import LessonView
         self.client.force_authenticate(self.owner)
         self.post()
         with mock.patch("scoring.views.timezone.localdate", return_value=datetime.date.today() + datetime.timedelta(days=1)):
@@ -784,7 +774,7 @@ class LessonViewTests(TestCase):
     def test_owners_only(self):
         self.assertEqual(self.post().status_code, 401)
         for role in ("analyst", "admin"):
-            staff = User.objects.create_user(username=role, email=f"{role}@lv.ke", password="x", role=role)
+            staff = consenting_user(username=role, email=f"{role}@lv.ke", password="x", role=role)
             self.client.force_authenticate(staff)
             self.assertEqual(self.post().status_code, 403, role)
 
@@ -796,10 +786,10 @@ class LessonViewTests(TestCase):
         self.client.force_authenticate(self.owner)
         self.post("late_payment_history")
         self.post("cashflow_stability")
-        other = User.objects.create_user(username="lv2", email="lv2@test.ke", password="x", role="owner")
+        other = consenting_user(username="lv2", email="lv2@test.ke", password="x", role="owner")
         self.client.force_authenticate(other)
         self.post("late_payment_history")
-        admin = User.objects.create_user(username="lva", email="lva@test.ke", password="x", role="admin")
+        admin = consenting_user(username="lva", email="lva@test.ke", password="x", role="admin")
         self.client.force_authenticate(admin)
         body = self.client.get("/api/scoring/admin/overview/").json()
         self.assertEqual(body["lesson_views"], [
@@ -816,7 +806,7 @@ class ModelV3Tests(TestCase):
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="v3", email="v3@test.ke", password="x", role="owner")
+        self.owner = consenting_user(username="v3", email="v3@test.ke", password="x", role="owner")
         self.meta = json.loads((settings.ML_ARTIFACTS_DIR / "model_metadata.json").read_text(encoding="utf-8"))
 
     def test_metadata_is_v3(self):
@@ -932,7 +922,7 @@ class ModelV3Tests(TestCase):
         self.assertEqual(res.status_code, 400)
 
     def test_admin_model_and_fairness(self):
-        admin = User.objects.create_user(username="v3a", email="v3a@test.ke", password="x", role="admin")
+        admin = consenting_user(username="v3a", email="v3a@test.ke", password="x", role="admin")
         self.stored("xgb_msme_v3", 600, "Moderate Risk", collateral="Low")
         self.client.force_authenticate(admin)
         model = self.client.get("/api/scoring/admin/model/").json()
@@ -951,10 +941,10 @@ class ModelV3Tests(TestCase):
 class DecisionLetterTests(TestCase):
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="lo", email="lo@test.ke", password="x", role="owner",
+        self.owner = consenting_user(username="lo", email="lo@test.ke", password="x", role="owner",
                                               full_name="Wanjiku Kamau")
-        self.other = User.objects.create_user(username="lx", email="lx@test.ke", password="x", role="owner")
-        self.analyst = User.objects.create_user(username="la", email="la@test.ke", password="x", role="analyst",
+        self.other = consenting_user(username="lx", email="lx@test.ke", password="x", role="owner")
+        self.analyst = consenting_user(username="la", email="la@test.ke", password="x", role="analyst",
                                                 full_name="Otieno Analyst")
 
     # helpers -------------------------------------------------------------
@@ -1050,7 +1040,7 @@ class DecisionLetterTests(TestCase):
         self.assertEqual(self.letter(a, self.other).status_code, 404)
         self.assertEqual(self.letter(999_999, self.other).status_code, 404)
         self.assertEqual(self.letter(a, self.analyst).status_code, 200)
-        admin = User.objects.create_user(username="ad", email="ad@test.ke", password="x", role="admin")
+        admin = consenting_user(username="ad", email="ad@test.ke", password="x", role="admin")
         self.assertEqual(self.letter(a, admin).status_code, 200)
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(f"/api/scoring/assessments/{a.pk}/letter/").status_code, 401)
@@ -1134,9 +1124,9 @@ class ScoreValidityTests(TestCase):
 
     def setUp(self):
         self.client = APIClient(HTTP_HOST="localhost")
-        self.owner = User.objects.create_user(username="vo", email="vo@test.ke", password="x", role="owner",
+        self.owner = consenting_user(username="vo", email="vo@test.ke", password="x", role="owner",
                                               full_name="Akinyi Otieno")
-        self.analyst = User.objects.create_user(username="va", email="va@test.ke", password="x", role="analyst",
+        self.analyst = consenting_user(username="va", email="va@test.ke", password="x", role="analyst",
                                                 full_name="Validity Analyst")
 
     # helpers -------------------------------------------------------------

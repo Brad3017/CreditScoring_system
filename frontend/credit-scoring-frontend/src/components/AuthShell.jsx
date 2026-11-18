@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 // Shared layout for the public pages (login and signup).
-export default function AuthShell({ title, subtitle, children }) {
+// width: the card's max width (sign-in forms are narrow; the consent gate needs room for its text).
+export default function AuthShell({ title, subtitle, children, width = 420 }) {
   return (
     <div
       style={{
@@ -11,7 +12,7 @@ export default function AuthShell({ title, subtitle, children }) {
         padding: "var(--space-12) var(--space-4)",
       }}
     >
-      <div style={{ width: "100%", maxWidth: 420 }}>
+      <div style={{ width: "100%", maxWidth: width }}>
         <div style={{ textAlign: "center", marginBottom: "var(--space-6)" }}>
           <span
             aria-hidden="true"

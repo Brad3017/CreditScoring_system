@@ -2,7 +2,7 @@
 // tokens, so it does not depend on Tailwind.
 import { useNavigate, useLocation } from "react-router-dom";
 import { clearSession } from "../lib/api";
-import { LogOut } from "lucide-react";
+import { LogOut, ShieldCheck } from "lucide-react";
 
 const SIDEBAR = "#14201c";
 const SIDEBAR_LINE = "rgba(255,255,255,0.09)";
@@ -93,7 +93,10 @@ export default function Sidebar({ title, subtitle, user, actions, children, nav,
               <div style={{ fontSize: "var(--text-sm)", color: "#8fa098" }}>{roleLabel}</div>
             </div>
           </div>
-          <button type="button" className="sb-item" onClick={logout} style={{ marginTop: "var(--space-2)", color: "#f0a999" }}>
+          <button type="button" className="sb-item" onClick={() => navigate("/account/privacy")} aria-current={location.pathname === "/account/privacy" ? "page" : undefined} style={{ marginTop: "var(--space-2)" }}>
+            <ShieldCheck size={16} aria-hidden="true" /> Privacy and consent
+          </button>
+          <button type="button" className="sb-item" onClick={logout} style={{ color: "#f0a999" }}>
             <LogOut size={16} aria-hidden="true" /> Log out
           </button>
         </div>

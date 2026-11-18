@@ -63,7 +63,7 @@ class AssessmentBusinessSerializer(serializers.Serializer):
 # Fields an owner edits on a business. PIN rules are in validate_kra_pin.
 BUSINESS_FIELDS = [
     "business_name", "kra_pin", "sector", "county", "location_type", "legal_status",
-    "business_age_years", "employees_count",
+    "business_age_years", "employees_count", "till_number",
 ]
 
 
@@ -127,7 +127,8 @@ class CreditRequestSerializer(serializers.ModelSerializer):
         fields = "__all__"
         # business and business_name are set by the view from the chosen BusinessProfile
         # (AssessmentBusinessSerializer reads the business choice), never from this payload.
-        read_only_fields = ["id", "user", "submitted_at", "business", "business_name"]
+        # revenue_source and till_statement are set by the view from a checked till statement, never from the payload.
+        read_only_fields = ["id", "user", "submitted_at", "business", "business_name", "revenue_source", "till_statement"]
         extra_kwargs = {f: {"required": True} for f in MODEL_INPUT_FIELDS}
 
     def validate(self, attrs):
@@ -144,6 +145,10 @@ class CreditRequestSerializer(serializers.ModelSerializer):
                 )
             elif revenue is not None and revenue > 0 and profit > revenue:
                 errors["monthly_profit_kes"] = "Profit cannot be greater than monthly revenue."
+
+        expenses = attrs.get("monthly_expenses_kes")
+        if expenses is not None and expenses < 0:
+            errors["monthly_expenses_kes"] = "Monthly business costs cannot be negative."
 
         loan = attrs.get("loan_amount")
         if loan is not None and loan <= 0:
@@ -196,4 +201,35 @@ class CreditAssessmentSerializer(serializers.ModelSerializer):
         return self._validity(obj)["status"]
 
     def get_days_remaining(self, obj):
-        return self._validity(obj)["days_remaining"]        
+        return self._validity(obj)["days_remaining"]
+
+
+def _money(value):
+    return float(value) if value is not None else None
+
+
+def statement_payload(statement):
+    """What the API shows about a till statement (upload response, GET, and nested in assessments)."""
+    if statement is None:
+        return None
+    return {
+        "id": statement.id,
+        "business_id": statement.business_id,
+        "status": statement.status,
+        "organisation_name": statement.organisation_name,
+        "shortcode": statement.shortcode,
+        "period_start": statement.period_start.isoformat() if statement.period_start else None,
+        "period_end": statement.period_end.isoformat() if statement.period_end else None,
+        "transactions_count": statement.transactions_count,
+        "skipped_rows": statement.skipped_rows,
+        "avg_monthly_revenue": _money(statement.avg_monthly_revenue),
+        "till_payments": statement.till_payments,
+        "unique_customers": statement.unique_customers,
+        "repeat_customer_share": statement.repeat_customer_share,
+        "avg_ticket": _money(statement.avg_ticket),
+        "monthly_breakdown": statement.monthly_breakdown,
+        "flags": statement.flags,
+        "checks": statement.checks,
+        "rejection_reason": statement.rejection_reason,
+        "created_at": statement.created_at.isoformat() if statement.created_at else None,
+    }

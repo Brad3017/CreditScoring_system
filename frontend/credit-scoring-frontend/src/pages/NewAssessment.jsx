@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { COUNTIES } from "../lib/counties";
-import { fetchBusinesses, getCurrentUser, submitAssessment } from "../lib/api";
+import { fetchBusinesses, fetchConsents, getCurrentUser, submitAssessment, uploadTillStatement } from "../lib/api";
+import { CREDIT_SCORING_EVENT } from "../lib/consent";
+import { CreditScoringCard, useConsentTexts } from "../components/Consent";
 import { KRA_PIN_MESSAGE, KRA_PIN_PLACEHOLDER, isValidKraPin, normaliseKraPin } from "../lib/kraPin";
+import { t } from "../lib/i18n";
+import { kes, tillLine, uploadErrorLines } from "../lib/till";
+import SalesSourceBadge from "../components/SalesSourceBadge";
+import { TillChecks, TillTiles } from "../components/TillStatement";
 
 const DRAFT_KEY = "biasharascore_assessment_draft";
 
@@ -16,16 +22,22 @@ const NEW = "new";
 // The draft's choice checked against the owner's saved businesses. A chosen business always carries its
 // saved name and PIN; a choice that no longer exists is cleared, and so are the name and PIN with it.
 function reconcile(f, list) {
-  if (!list.length) return f.business_choice === NEW ? f : { ...f, business_choice: NEW, business_name: "", kra_pin: "" };
+  f = keepTill(f, f.business_choice);
+  if (!list.length) return f.business_choice === NEW ? f : { ...f, business_choice: NEW, business_name: "", kra_pin: "", till: null };
   if (!f.business_choice || f.business_choice === NEW) return f;
   const b = list.find((x) => String(x.id) === f.business_choice);
-  if (!b) return { ...f, business_choice: "", business_name: "", kra_pin: "" };
+  if (!b) return { ...f, business_choice: "", business_name: "", kra_pin: "", till: null };
   return { ...f, business_name: b.business_name, kra_pin: b.kra_pin || "" };
+}
+
+// A till statement belongs to one saved business: it is dropped when the business changes.
+function keepTill(f, choice) {
+  return f.till && String(f.till.business_id) !== String(choice) ? { ...f, till: null } : f;
 }
 
 // A saved business chosen: its details fill the form (the same as picking it from the list).
 function withBusiness(f, b) {
-  const next = { ...f, business_choice: String(b.id), kra_pin: b.kra_pin || "" };
+  const next = { ...keepTill(f, b.id), business_choice: String(b.id), kra_pin: b.kra_pin || "" };
   for (const field of PROFILE_FIELDS) if (b[field] != null && b[field] !== "") next[field] = String(b[field]);
   return next;
 }
@@ -49,6 +61,11 @@ const INITIAL = {
   employees_count: "3",
   owner_education: "Secondary",
 
+  // Sales: "manual" (revenue and profit typed in) or "till" (revenue read from a Lipa na M-Pesa till statement,
+  // profit = that revenue - the monthly costs typed in). till holds the statement the server read, or null.
+  revenue_mode: "manual",
+  till: null,
+  monthly_expenses_kes: "",
   monthly_revenue_kes: "200000",
   monthly_profit_kes: "95000",
   loan_amount: "500000",
@@ -89,11 +106,17 @@ function validate(step, f, selected) {
   }
   // Same rules as CreditRequestSerializer.validate on the server.
   if (step === 2) {
-    const revenue = Number(f.monthly_revenue_kes);
-    const profit = Number(f.monthly_profit_kes);
-    if (!isNumber(f.monthly_revenue_kes, 0) || revenue <= 0) e.monthly_revenue_kes = "Enter your monthly revenue in KES. It must be more than 0.";
-    if (!isNumber(f.monthly_profit_kes, 0)) e.monthly_profit_kes = "Enter your average monthly profit, 0 or more.";
-    else if (revenue > 0 && profit > revenue) e.monthly_profit_kes = "Profit cannot be greater than monthly revenue.";
+    if (f.revenue_mode === "till") {
+      if (!selected) e.till = t("till.newBusiness");
+      else if (!f.till) e.till = t("till.needStatement");
+      if (!isNumber(f.monthly_expenses_kes, 0)) e.monthly_expenses_kes = t("till.needExpenses");
+    } else {
+      const revenue = Number(f.monthly_revenue_kes);
+      const profit = Number(f.monthly_profit_kes);
+      if (!isNumber(f.monthly_revenue_kes, 0) || revenue <= 0) e.monthly_revenue_kes = "Enter your monthly revenue in KES. It must be more than 0.";
+      if (!isNumber(f.monthly_profit_kes, 0)) e.monthly_profit_kes = "Enter your average monthly profit, 0 or more.";
+      else if (revenue > 0 && profit > revenue) e.monthly_profit_kes = "Profit cannot be greater than monthly revenue.";
+    }
     if (!isNumber(f.loan_amount, 0) || Number(f.loan_amount) <= 0) e.loan_amount = "Enter the amount you are requesting. It must be more than 0.";
     if (!LOAN_PURPOSES.includes(f.loan_purpose)) e.loan_purpose = "Choose a loan purpose from the list.";
     if (!isWhole(f.tenure_months, 3, 60)) e.tenure_months = "Enter a repayment period between 3 and 60 months.";
@@ -111,17 +134,26 @@ function validate(step, f, selected) {
 // Converts the form's strings into the types the API expects.
 // repayment_confidence is no longer asked (model v3); an older saved draft may still hold it, so drop it.
 // A saved business is sent by id only (the server uses its saved name and PIN); a new one by name and PIN.
-function toPayload({ repayment_confidence: _unused, business_choice: _choice, kra_pin, ...f }, selected) {
+// With a till statement the server takes revenue from the statement and works out profit itself; the numbers
+// sent here only mirror that. Without one, expenses are not sent at all (self-reporting is unchanged).
+function toPayload({ repayment_confidence: _unused, business_choice: _choice, kra_pin, revenue_mode, till, monthly_expenses_kes, ...f }, selected) {
   const business = selected
     ? { business_id: selected.id, business_name: selected.business_name }
     : { kra_pin: normaliseKraPin(kra_pin) };
+  const sales = revenue_mode === "till" && till
+    ? {
+        till_statement_id: till.id,
+        monthly_expenses_kes: Number(monthly_expenses_kes),
+        monthly_revenue_kes: Number(till.avg_monthly_revenue),
+        monthly_profit_kes: Math.max(0, Number(till.avg_monthly_revenue) - Number(monthly_expenses_kes)),
+      }
+    : { monthly_revenue_kes: Number(f.monthly_revenue_kes), monthly_profit_kes: Number(f.monthly_profit_kes) };
   return {
     ...f,
     ...business,
+    ...sales,
     business_age_years: Number(f.business_age_years),
     employees_count: Number(f.employees_count),
-    monthly_revenue_kes: Number(f.monthly_revenue_kes),
-    monthly_profit_kes: Number(f.monthly_profit_kes),
     loan_amount: Number(f.loan_amount),
     tenure_months: Number(f.tenure_months),
     days_payable_outstanding: Number(f.days_payable_outstanding),
@@ -145,6 +177,9 @@ export default function NewAssessment() {
   // The owner's saved businesses: null while loading.
   const [businesses, setBusinesses] = useState(null);
   const [businessLoadError, setBusinessLoadError] = useState("");
+  // Credit-scoring consent: null while loading, false = show the consent card and lock the form.
+  // If it can't be loaded the form stays open; the server still refuses an assessment without consent.
+  const [scoringConsent, setScoringConsent] = useState(null);
 
   function loadBusinesses() {
     return fetchBusinesses()
@@ -166,7 +201,15 @@ export default function NewAssessment() {
   useEffect(() => {
     getCurrentUser().then(setUser).catch(() => {});
     loadBusinesses();
+    fetchConsents()
+      .then((b) => setScoringConsent(Boolean(b.consents.find((c) => c.purpose === "credit_scoring")?.active)))
+      .catch(() => setScoringConsent(true));
+    // A 403 consent_required for credit_scoring (e.g. withdrawn in another tab): show the card again.
+    const onRequired = () => setScoringConsent(false);
+    window.addEventListener(CREDIT_SCORING_EVENT, onRequired);
+    return () => window.removeEventListener(CREDIT_SCORING_EVENT, onRequired);
   }, []);
+  const locked = scoringConsent === false;
 
   const isNew = form.business_choice === NEW;
   const selected = !isNew && businesses ? businesses.find((b) => String(b.id) === form.business_choice) || null : null;
@@ -177,7 +220,7 @@ export default function NewAssessment() {
     setSubmitError("");
     setNotice("");
     if (value === NEW) {
-      setForm((f) => (f.business_choice === NEW ? f : { ...f, business_choice: NEW, business_name: "", kra_pin: "" }));
+      setForm((f) => (f.business_choice === NEW ? f : { ...f, business_choice: NEW, business_name: "", kra_pin: "", till: null }));
       return;
     }
     const b = (businesses || []).find((x) => String(x.id) === value);
@@ -191,6 +234,16 @@ export default function NewAssessment() {
     setForm((prev) => ({ ...prev, [name]: value }));
     setErrors((prev) => ({ ...prev, [name]: undefined }));
     setNotice("");
+  }
+
+  function setRevenueMode(mode) {
+    setForm((f) => ({ ...f, revenue_mode: mode, till: mode === "manual" ? null : f.till }));
+    setErrors((prev) => ({ ...prev, till: undefined, monthly_revenue_kes: undefined, monthly_profit_kes: undefined }));
+  }
+
+  function attachStatement(statement) {
+    setForm((f) => ({ ...f, till: statement }));
+    setErrors((prev) => ({ ...prev, till: undefined, till_statement_id: undefined }));
   }
 
   function next() {
@@ -231,6 +284,11 @@ export default function NewAssessment() {
       if (err.fields && Object.keys(err.fields).length) {
         setErrors(err.fields);
         if (err.fields.kra_pin || err.fields.business_name) setStep(1);
+        else if (err.fields.till_statement_id || err.fields.monthly_expenses_kes) {
+          // The statement can no longer be used (e.g. for another business): read it again.
+          if (err.fields.till_statement_id) setForm((f) => ({ ...f, till: null }));
+          setStep(2);
+        }
       } else if (selected && /business not found/i.test(err.message || "")) {
         // The chosen business is gone (or was never this owner's): choose again.
         setStep(1);
@@ -249,7 +307,10 @@ export default function NewAssessment() {
         <p>Step {step} of 4: {STEPS[step - 1].title}</p>
       </header>
 
-      <section className="panel">
+      {locked && <CreditScoringCard onAgreed={() => { setScoringConsent(true); setSubmitError(""); }} />}
+
+      <section className="panel" inert={locked || undefined} aria-disabled={locked || undefined}
+        style={locked ? { opacity: 0.55 } : undefined}>
       <ol aria-label="Progress" style={{ display: "flex", gap: "var(--space-6)", listStyle: "none", padding: 0, margin: "0 0 var(--space-6)", flexWrap: "wrap" }}>
         {STEPS.map((s) => (
           <li key={s.id} style={{ color: s.id === step ? "var(--ink)" : "var(--ink-2)", fontWeight: s.id === step ? 600 : 400, borderBottom: s.id === step ? "2px solid var(--accent)" : "2px solid transparent", paddingBottom: 2 }}>
@@ -293,8 +354,26 @@ export default function NewAssessment() {
 
       {step === 2 && (
         <Section title="Finances">
-          <Field label="Monthly revenue (KES)" name="monthly_revenue_kes" type="number" min="0" value={form.monthly_revenue_kes} onChange={update} error={errors.monthly_revenue_kes} />
-          <Field label="Average monthly profit (KES)" name="monthly_profit_kes" type="number" min="0" value={form.monthly_profit_kes} onChange={update} error={errors.monthly_profit_kes} />
+          <SalesSource
+            mode={form.revenue_mode}
+            onMode={setRevenueMode}
+            statement={form.till}
+            business={selected}
+            onRead={attachStatement}
+            error={errors.till || errors.till_statement_id}
+          />
+          {form.revenue_mode === "till" ? (
+            <>
+              {form.till && <VerifiedRevenue statement={form.till} onManual={() => setRevenueMode("manual")} />}
+              <Field label={t("till.expensesLabel")} name="monthly_expenses_kes" type="number" min="0" value={form.monthly_expenses_kes}
+                onChange={update} error={errors.monthly_expenses_kes} hint={expensesHint(form)} />
+            </>
+          ) : (
+            <>
+              <Field label="Monthly revenue (KES)" name="monthly_revenue_kes" type="number" min="0" value={form.monthly_revenue_kes} onChange={update} error={errors.monthly_revenue_kes} />
+              <Field label="Average monthly profit (KES)" name="monthly_profit_kes" type="number" min="0" value={form.monthly_profit_kes} onChange={update} error={errors.monthly_profit_kes} />
+            </>
+          )}
           <Field label="Amount requested (KES)" name="loan_amount" type="number" min="1" value={form.loan_amount} onChange={update} error={errors.loan_amount} />
           <SelectField label="Loan purpose" name="loan_purpose" value={form.loan_purpose} onChange={update} error={errors.loan_purpose}
             options={LOAN_PURPOSES.map((p) => [p, p])} />
@@ -327,7 +406,14 @@ export default function NewAssessment() {
             <Review label="KRA PIN" value={selected ? selected.kra_pin || "Not saved" : normaliseKraPin(form.kra_pin)} />
             <Review label="County" value={form.county} />
             <Review label="Sector" value={form.sector} />
-            <Review label="Monthly revenue" value={`KES ${Number(form.monthly_revenue_kes).toLocaleString("en-KE")}`} />
+            {form.revenue_mode === "till" && form.till ? (
+              <>
+                <Review label="Monthly revenue" value={<>{kes(form.till.avg_monthly_revenue)} <SalesSourceBadge source="till_statement" statement={form.till} compact /></>} />
+                <Review label={t("till.expenses")} value={kes(form.monthly_expenses_kes)} />
+              </>
+            ) : (
+              <Review label="Monthly revenue" value={`KES ${Number(form.monthly_revenue_kes).toLocaleString("en-KE")}`} />
+            )}
             <Review label="Amount requested" value={`KES ${Number(form.loan_amount).toLocaleString("en-KE")}`} />
             <Review label="Loan purpose" value={form.loan_purpose} />
             <Review label="Security" value={form.collateral_level} />
@@ -406,6 +492,150 @@ function BusinessChoice({ businesses, value, onChange, error, loadError }) {
         </p>
       )}
     </fieldset>
+  );
+}
+
+// "Your till statement shows sales only…", plus the profit that will be scored once costs are entered.
+function expensesHint(f) {
+  const help = t("till.expensesHelp");
+  if (!f.till || !isNumber(f.monthly_expenses_kes, 0)) return help;
+  const profit = Math.max(0, Number(f.till.avg_monthly_revenue) - Number(f.monthly_expenses_kes));
+  return `${help} ${t("till.profitNote", { profit: Math.round(profit).toLocaleString("en-KE") })}`;
+}
+
+// Revenue: typed in, or read from a Lipa na M-Pesa till statement. Spans the whole Finances grid.
+function SalesSource({ mode, onMode, statement, business, onRead, error }) {
+  const options = [["manual", t("till.modeManual")], ["till", t("till.modeUpload")]];
+  // Narrower padding on phones: this box sits inside the Finances fieldset, which has its own padding.
+  const box = { gap: "var(--space-4)", padding: "clamp(var(--space-3), 3vw, var(--space-5))", border: "1px solid var(--line-strong)", borderRadius: "var(--radius-lg)" };
+  return (
+    <div style={{ gridColumn: "1 / -1", display: "grid", gap: "var(--space-4)" }}>
+      <div role="radiogroup" aria-label="Monthly sales" style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)" }}>
+        {options.map(([value, text]) => {
+          const checked = mode === value;
+          return (
+            <label key={value} style={{
+              display: "flex", alignItems: "center", gap: "var(--space-3)", cursor: "pointer", flex: "1 1 16rem",
+              padding: "var(--space-3) var(--space-4)", borderRadius: "var(--radius)",
+              border: `1px solid ${checked ? "var(--accent)" : "var(--line-strong)"}`,
+              background: checked ? "var(--accent-soft)" : "var(--surface)", fontWeight: checked ? 600 : 400,
+            }}>
+              <input type="radio" name="revenue_mode" value={value} checked={checked} onChange={() => onMode(value)} />
+              {text}
+            </label>
+          );
+        })}
+      </div>
+
+      {mode === "till" && !business && <p style={{ margin: 0, color: "var(--ink-2)" }}>{t("till.newBusiness")}</p>}
+      {mode === "till" && business && !statement && <TillUpload businessId={business.id} onRead={onRead} box={box} />}
+      {mode === "till" && statement && (
+        <div className="stack" style={box}>
+          <p style={{ margin: 0, fontWeight: 600 }}>{tillLine(statement)}</p>
+          <TillChecks checks={statement.checks} />
+          <TillTiles statement={statement} />
+        </div>
+      )}
+      {mode === "till" && error && business && (
+        <p role="alert" style={{ margin: 0, color: "var(--risk-high)", fontSize: "var(--text-xs)" }}>{error}</p>
+      )}
+    </div>
+  );
+}
+
+const hintStyle = { color: "var(--ink-2)", fontSize: "var(--text-xs)", marginTop: "var(--space-1)" };
+const errorStyle = { ...hintStyle, color: "var(--risk-high)" };
+
+// File, optional password, consent, "Read statement". The PDF goes to the server once and is not kept there.
+function TillUpload({ businessId, onRead, box }) {
+  // The consent wording comes from the server (accounts/consent_texts.py statement_processing).
+  const { texts: consentTexts } = useConsentTexts();
+  const [file, setFile] = useState(null);
+  const [password, setPassword] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problems, setProblems] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  async function read() {
+    const found = {};
+    if (!file) found.file = t("till.needFile");
+    if (!consent) found.consent = t("till.needConsent");
+    setFieldErrors(found);
+    setProblems([]);
+    if (Object.keys(found).length) return;
+    setBusy(true);
+    try {
+      onRead(await uploadTillStatement({ file, password, businessId, consent }));
+    } catch (err) {
+      setProblems(uploadErrorLines(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="stack" style={box}>
+      <div>
+        <Label text={t("till.file")} htmlFor="f-till-file" />
+        <input id="f-till-file" type="file" accept="application/pdf,.pdf" aria-invalid={!!fieldErrors.file}
+          aria-describedby={fieldErrors.file ? "f-till-file-err" : "f-till-file-hint"}
+          onChange={(e) => { setFile(e.target.files?.[0] || null); setProblems([]); setFieldErrors((x) => ({ ...x, file: undefined })); }}
+          style={{ ...controlStyle, padding: "var(--space-2)" }} />
+        {fieldErrors.file
+          ? <p id="f-till-file-err" style={errorStyle}>{fieldErrors.file}</p>
+          : <p id="f-till-file-hint" style={hintStyle}>{t("till.fileHelp")}</p>}
+      </div>
+      <div style={{ maxWidth: "24rem" }}>
+        <Label text={t("till.password")} htmlFor="f-till-password" />
+        <input id="f-till-password" type="password" autoComplete="off" value={password}
+          onChange={(e) => { setPassword(e.target.value); setProblems([]); }} style={controlStyle} />
+      </div>
+      <div>
+        <label style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start", cursor: "pointer" }}>
+          <input type="checkbox" checked={consent} aria-invalid={!!fieldErrors.consent}
+            aria-describedby={fieldErrors.consent ? "f-till-consent-err" : undefined} style={{ marginTop: 6 }}
+            onChange={(e) => { setConsent(e.target.checked); setFieldErrors((x) => ({ ...x, consent: undefined })); }} />
+          <span>{consentTexts?.statement_processing || t("till.consent")}</span>
+        </label>
+        {fieldErrors.consent && <p id="f-till-consent-err" style={errorStyle}>{fieldErrors.consent}</p>}
+      </div>
+      <div>
+        <button type="button" className="btn btn-primary" onClick={read} disabled={busy} aria-busy={busy}>
+          {busy ? t("till.reading") : t("till.read")}
+        </button>
+      </div>
+      <div aria-live="polite">
+        {problems.length > 0 && (
+          <div role="alert" style={{ color: "var(--risk-high)" }}>
+            <p style={{ margin: 0 }}>{problems[0]}</p>
+            {problems.length > 1 && (
+              <ul style={{ margin: "var(--space-2) 0 0", paddingLeft: "var(--space-6)" }}>
+                {problems.slice(1).map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The statement's monthly sales, read-only, with where it came from and the way back to typing it in.
+function VerifiedRevenue({ statement, onManual }) {
+  return (
+    <div>
+      <Label text="Monthly revenue (KES)" htmlFor="f-till-revenue" />
+      <input id="f-till-revenue" className="num" readOnly value={Math.round(statement.avg_monthly_revenue)} aria-describedby="f-till-revenue-hint"
+        style={{ ...controlStyle, background: "var(--paper)", color: "var(--ink-2)" }} />
+      <p id="f-till-revenue-hint" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "var(--space-3)", margin: "var(--space-2) 0 0", fontSize: "var(--text-xs)" }}>
+        <SalesSourceBadge source="till_statement" statement={statement} compact wrap />
+        <button type="button" onClick={onManual}
+          style={{ background: "none", border: 0, padding: 0, color: "var(--accent)", textDecoration: "underline", cursor: "pointer", fontSize: "var(--text-xs)" }}>
+          {t("till.useManual")}
+        </button>
+      </p>
+    </div>
   );
 }
 
