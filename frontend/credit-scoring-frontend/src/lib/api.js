@@ -1,4 +1,5 @@
 import { CREDIT_SCORING_EVENT, setMissingConsents } from "./consent";
+import { setUnreadCount } from "./unreadStore";
 
 export const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
 
@@ -198,6 +199,7 @@ export function saveSession(access, refresh, role, user) {
 export function clearSession() {
   SESSION_KEYS.forEach((k) => localStorage.removeItem(k));
   setMissingConsents([]);
+  setUnreadCount(null);
 }
 
 // The signed-in user's display details (id, email, full_name, role), kept with the session so the
@@ -469,6 +471,38 @@ export const grantConsent = (purpose) =>
   consentPost(`${BASE}/consents/`, { purpose }, "Your consent could not be saved. Try again.");
 export const withdrawConsent = (purpose) =>
   consentPost(`${BASE}/consents/${purpose}/withdraw/`, null, "Your consent could not be withdrawn. Try again.");
+
+// ---- Notifications (/api/notifications/): always the signed-in user's own -----------------------------
+
+export async function fetchUnreadCount() {
+  const res = await authFetch(`${BASE}/notifications/unread-count/`, { headers: {} });
+  if (!res.ok) throw new Error("Notifications could not be loaded.");
+  const { unread } = await res.json();
+  setUnreadCount(unread);
+  return unread;
+}
+
+// {count, next, previous, results: [{id, type, title, message, link, created_at, read_at}]}, 20 per page.
+export async function fetchNotifications({ unread = false, page = 1 } = {}) {
+  const q = new URLSearchParams({ page: String(page) });
+  if (unread) q.set("unread", "true");
+  const res = await authFetch(`${BASE}/notifications/?${q}`, { headers: {} });
+  if (!res.ok) throw new Error("Notifications could not be loaded. Try again.");
+  return res.json();
+}
+
+export async function markNotificationRead(id) {
+  const res = await authFetch(`${BASE}/notifications/${id}/read/`, { method: "POST", headers: {} });
+  if (!res.ok) throw new Error("This notification could not be marked as read.");
+  return res.json();
+}
+
+export async function markAllNotificationsRead() {
+  const res = await authFetch(`${BASE}/notifications/read-all/`, { method: "POST", headers: {} });
+  if (!res.ok) throw new Error("Notifications could not be marked as read. Try again.");
+  setUnreadCount(0);
+  return res.json();
+}
 
 async function adminGet(path, params = {}) {
   const q = new URLSearchParams(

@@ -4,6 +4,8 @@ services:
   db:
     image: postgres:16
     restart: unless-stopped
+    ports:
+       - "127.0.0.1:15432:5432"
     environment:
       POSTGRES_DB: credit_scoring_db
       POSTGRES_USER: postgres

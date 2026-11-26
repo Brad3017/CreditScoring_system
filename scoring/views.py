@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import UserRateThrottle
 from accounts.consent import credit_scoring_block
 from accounts.permissions import ConsentRequired
+from notifications import services as notifications
 
 from .models import (
     CreditRequest, CreditAssessment, BusinessProfile, LessonView, LetterDownload, StatementUpload,
@@ -274,6 +275,7 @@ class ReviewAssessmentView(APIView):
         a.reviewed_by = request.user
         a.reviewed_at = timezone.now()
         a.save(update_fields=["review_status", "review_note", "reviewed_by", "reviewed_at"])
+        notifications.decision_made(a)
         return Response(_payload(a, detailed=True))
 
 
@@ -368,6 +370,8 @@ class SubmitCreditAssessmentView(APIView):
                     shap_values=results["shap_values"],
                     model_version=results["model_version"],
                 )
+                # Sent only once this transaction commits.
+                notifications.assessment_submitted(assessment)
         except _Reject as rejected:
             return rejected.response
         except IntegrityError:
@@ -591,6 +595,7 @@ class RequestReviewView(APIView):
         a.review_requested_at = timezone.now()
         a.review_request_reason = reason
         a.save(update_fields=["review_requested_at", "review_request_reason"])
+        notifications.review_requested(a)
         return Response(_payload(with_superseded(CreditAssessment.objects.filter(pk=a.pk)).select_related(
             "request", "request__till_statement", "reviewed_by").get()))
 

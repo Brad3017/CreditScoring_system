@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronDown, LogOut, Building2, ShieldCheck } from "lucide-react";
 import { clearSession, getSessionUser } from "../lib/api";
+import NotificationBell from "./NotificationBell";
 
 // Business profile lives in the account menu, not here.
 const links = [
@@ -13,7 +14,7 @@ const links = [
 ];
 
 // Top-bar layout for borrower pages. Styles live in tokens.css (.app-*): a three-column grid
-// (brand | nav | account) whose nav column scrolls inside itself, so the columns never overlap.
+// (brand | nav | bell + account) whose nav column scrolls inside itself, so the columns never overlap.
 export default function AppShell({ user: userProp, children }) {
   // The user stored at login is always available, so the bar never waits on (or fails with) /auth/me/.
   const user = userProp?.email ? { ...getSessionUser(), ...userProp } : getSessionUser();
@@ -35,7 +36,10 @@ export default function AppShell({ user: userProp, children }) {
             ))}
           </nav>
 
-          <AccountMenu user={user} />
+          <div className="app-header-end">
+            <NotificationBell />
+            <AccountMenu user={user} />
+          </div>
         </div>
       </header>
 

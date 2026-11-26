@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     # Local
     "accounts",
     "scoring",
+    "notifications",
 ]
 
 

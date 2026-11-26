@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import RiskScale from "../components/RiskScale";
 import StatusPill from "../components/StatusPill";
@@ -21,12 +21,15 @@ const kes = (n) => (n == null || n === "" ? "Not recorded" : `KES ${Number(n).to
 export default function AssessmentResultPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const snapshot = location.state?.assessment;
+  // /assessments/:pk (e.g. from a notification) loads the report by id; History opens
+  // /assessment/results with the report passed along as navigation state.
+  const { pk } = useParams();
+  const [mine, setMine] = useState(null);
+  const snapshot = location.state?.assessment || (pk && mine ? mine.find((a) => String(a.pk) === pk) : undefined);
   const [user, setUser] = useState(null);
   // The owner's assessments, fetched fresh: the report arrives as a navigation snapshot (kept across
   // reloads), so its validity may be out of date, and the newest assessment of the business is needed
-  // for "View latest assessment".
-  const [mine, setMine] = useState(null);
+  // for "View latest assessment". (`mine` is declared above, with the id lookup.)
   // This assessment as returned by request-review, once the owner has asked for a review here.
   const [requested, setRequested] = useState(null);
 
@@ -42,6 +45,14 @@ export default function AssessmentResultPage() {
         ...Object.fromEntries(FRESH_FIELDS.filter((k) => k in fresh).map((k) => [k, fresh[k]])),
       }
     : snapshot;
+
+  if (!assessment && pk && mine === null) {
+    return (
+      <AppShell user={user}>
+        <p role="status" style={{ color: "var(--ink-2)", margin: 0 }}>Loading report…</p>
+      </AppShell>
+    );
+  }
 
   if (!assessment) {
     return (

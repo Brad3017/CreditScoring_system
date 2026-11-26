@@ -12,6 +12,7 @@ import Learn from "./pages/Learn";
 import LearnLesson from "./pages/LearnLesson";
 import Privacy from "./pages/Privacy";
 import PrivacyConsent from "./pages/PrivacyConsent";
+import Notifications from "./pages/Notifications";
 import { ConsentGate } from "./components/Consent";
 import { getToken, getRole, verifySession } from "./lib/api";
 import { useMissingConsents } from "./lib/consent";
@@ -115,6 +116,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/account/privacy" element={<SignedIn><PrivacyConsent /></SignedIn>} />
+        {/* Every role: the page picks the owner, analyst or admin layout itself. */}
+        <Route path="/notifications" element={<SignedIn><Notifications /></SignedIn>} />
 
         <Route path="/analyst" element={<AnalystOnly><AnalystDashboard /></AnalystOnly>} />
         <Route path="/analyst/requests" element={<AnalystOnly><AssessmentRequests /></AnalystOnly>} />
@@ -181,6 +184,8 @@ export default function App() {
             </OwnerOnly>
           }
         />
+        {/* The same report, opened by id (the link in an owner's notifications). */}
+        <Route path="/assessments/:pk" element={<OwnerOnly><AssessmentResultPage /></OwnerOnly>} />
       </Routes>
       </ConsentGated>
       </Suspense>

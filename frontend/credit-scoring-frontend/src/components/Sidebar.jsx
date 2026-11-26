@@ -3,6 +3,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { clearSession } from "../lib/api";
 import { LogOut, ShieldCheck } from "lucide-react";
+import NotificationBell from "./NotificationBell";
 
 const SIDEBAR = "#14201c";
 const SIDEBAR_LINE = "rgba(255,255,255,0.09)";
@@ -108,7 +109,11 @@ export default function Sidebar({ title, subtitle, user, actions, children, nav,
             <h1 style={{ margin: 0, fontSize: "var(--text-xl)" }}>{title}</h1>
             {subtitle && <p style={{ margin: "2px 0 0", color: "var(--ink-2)", fontSize: "var(--text-sm)" }}>{subtitle}</p>}
           </div>
-          <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>{actions}</div>
+          {/* margin-left: auto keeps the bell at the right edge when the header wraps on narrow screens. */}
+          <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap", marginLeft: "auto" }}>
+            {actions}
+            <NotificationBell />
+          </div>
         </header>
         <main className="sb-body" style={{ maxWidth: 1240, margin: "0 auto", display: "grid", gap: "var(--space-6)", boxSizing: "border-box" }}>
           {notice && (

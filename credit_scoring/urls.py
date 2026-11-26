@@ -31,4 +31,5 @@ urlpatterns = [
     path("api/consents/texts/", ConsentTextsView.as_view(), name="consent_texts"),
     path("api/consents/", ConsentListView.as_view(), name="consents"),
     path("api/consents/<str:purpose>/withdraw/", ConsentWithdrawView.as_view(), name="consent_withdraw"),
+    path("api/notifications/", include("notifications.urls")),
 ]
